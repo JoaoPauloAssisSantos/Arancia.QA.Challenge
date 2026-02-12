@@ -7,7 +7,6 @@ obj/
 *.log
 *.cache
 *.slnx
-
 Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -23,29 +22,22 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
-
 .NET Core
 project.lock.json
 project.fragment.lock.json
 artifacts/
-
 ASP.NET Scaffolding
 ScaffoldingReadMe.txt
-
 NuGet Packages
 *.nupkg
 *.snupkg
-
 Others
 CodeCoverage/
-
 MSBuild Binary and Structured Log
 *.binlog
-
 MSTest test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
-
 NUnit
 .VisualState.xml
 TestResult.xml
