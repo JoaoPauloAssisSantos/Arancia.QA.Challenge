@@ -37,8 +37,6 @@ NuGet Packages
 *.snupkg
 
 Others
-$*
-*
 CodeCoverage/
 
 MSBuild Binary and Structured Log
