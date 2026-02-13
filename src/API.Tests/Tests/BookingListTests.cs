@@ -1,6 +1,7 @@
-﻿using System.Text.Json;
-using FluentAssertions;
+﻿using FluentAssertions;
 using RestSharp;
+using System.Net;
+using System.Text.Json;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -105,6 +106,26 @@ public class BookingListTests : TestBase
 
         // Optional teardown: delete booking (implement DeleteBookingAsync with auth if available)
         // try { var authToken = await new AuthClient().GetTokenAsync("admin","password"); await bookingClient.DeleteBookingAsync(bookingId, authToken); } catch { /* log but don't fail test */ }
+    }
+    [Fact(DisplayName = "API-07 - Get booking by non-existing ID")]
+    public async Task GetBooking_ByNonExistingId_ReturnsNotFound()
+    {
+        // Arrange
+        const int nonExistingId = 99999999; // high ID, assumed not to exist
+        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
+
+        // Act
+        var req = new RestRequest($"booking/{nonExistingId}", Method.Get);
+        var resp = await client.ExecuteAsync(req);
+
+        // Log
+        _output.WriteLine($"GET /booking/{nonExistingId} status: {(int)resp.StatusCode} - {resp.StatusCode}");
+        _output.WriteLine($"Body: {resp.Content}");
+
+        // Assert
+        // Comportamento esperado: 404 NotFound
+        resp.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            $"expected 404 for non-existing booking id {nonExistingId}. Response: {resp.Content}");
     }
 
 }
