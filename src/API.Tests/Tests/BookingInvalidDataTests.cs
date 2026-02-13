@@ -83,4 +83,53 @@ public class BookingInvalidDataTests : TestBase
             throw new Xunit.Sdk.XunitException($"Unexpected status {code} for missing name fields (firstname='{firstName}', lastname='{lastName}'). Response: {resp.Content}");
         }
     }
+    [Fact(DisplayName = "Create booking with missing dates still returns 200")]
+    public async Task CreateBooking_WithInvalidDates_CurrentBehavior_Returns200()
+    {
+        // Arrange
+        var booking = CreateRandomBooking();
+        booking.bookingdates = new BookingDates
+        {
+            checkin = "0NaN-aN-aN",
+            checkout = "0NaN-aN-aN"
+        };
+        var client = new BookingClient();
+
+        // Act
+        var resp = await client.CreateBookingAsync(booking);
+
+        // Log
+        var json = JsonSerializer.Serialize(
+            booking,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        _output.WriteLine($"[CURRENT BEHAVIOR] Request JSON: {json}");
+        _output.WriteLine($"[CURRENT BEHAVIOR] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
+        _output.WriteLine($"[CURRENT BEHAVIOR] Response: {resp.Content}");
+
+        // Assert: document current behavior (200), even though it's not ideal
+        resp.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+    }
+    [Fact(DisplayName = "API-03 (current) - Create booking with missing name still returns 200")]
+    public async Task CreateBooking_WithMissingNameFields_CurrentBehavior_Returns200()
+    {
+        // Arrange
+        var booking = CreateRandomBooking();
+        booking.firstname = "";
+        booking.lastname = "";
+        var client = new BookingClient();
+
+        // Act
+        var resp = await client.CreateBookingAsync(booking);
+
+        // Log
+        var json = JsonSerializer.Serialize(
+            booking,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        _output.WriteLine($"[CURRENT BEHAVIOR] Request JSON: {json}");
+        _output.WriteLine($"[CURRENT BEHAVIOR] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
+        _output.WriteLine($"[CURRENT BEHAVIOR] Response: {resp.Content}");
+
+        // Assert: document current behavior (200)
+        resp.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+    }
 }
