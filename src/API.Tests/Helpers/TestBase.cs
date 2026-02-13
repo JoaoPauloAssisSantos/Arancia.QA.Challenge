@@ -1,5 +1,4 @@
 using Bogus;
-using System;
 public abstract class TestBase
 {
     protected Faker Faker { get; } = new Faker();

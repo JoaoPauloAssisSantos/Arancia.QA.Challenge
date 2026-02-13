@@ -4,7 +4,7 @@ using RestSharp;
 public class PingTests
 {
     [Fact]
-    public async System.Threading.Tasks.Task Ping_ShouldReturn201()
+    public async Task Ping_ShouldReturn201()
     {
         var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
         var req = new RestRequest("ping", Method.Get);
