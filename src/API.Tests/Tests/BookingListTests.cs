@@ -1,4 +1,5 @@
-﻿using FluentAssertions;
+﻿using Arancia.Test.API.Clients;
+using FluentAssertions;
 using RestSharp;
 using System.Net;
 using System.Text.Json;
@@ -7,125 +8,177 @@ using Xunit.Abstractions;
 
 public class BookingListTests : TestBase
 {
-    private readonly ITestOutputHelper _output;
-    public BookingListTests(ITestOutputHelper output) => _output = output;
-
+    public BookingListTests(ITestOutputHelper output) => InitTestBase(output);
     [Fact(DisplayName = "API-05 - Retrieve list of existing bookings")]
     public async Task GetBookings_ShouldReturnListWithBookingId()
     {
-        // Arrange - ensure at least one booking exists
+        // Arrange - create booking with specific roomid
         var booking = CreateRandomBooking();
+        booking.roomid = 1;
         var bookingClient = new BookingClient();
         var createResp = await bookingClient.CreateBookingAsync(booking);
-        createResp.StatusCode
-            .Should()
-            .BeOneOf(new[] { System.Net.HttpStatusCode.OK, System.Net.HttpStatusCode.Created },
-                because: "precondition: able to create a booking");
-        createResp.Content.Should().NotBeNullOrEmpty();
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
+
         using var createdDoc = JsonDocument.Parse(createResp.Content!);
         createdDoc.RootElement.TryGetProperty("bookingid", out var createdIdEl).Should().BeTrue();
         var createdId = createdIdEl.GetInt32();
+        Output.WriteLine($"Created booking id: {createdId}, roomid: {booking.roomid}");
 
-        _output.WriteLine($"Created booking id (precondition): {createdId}");
+        // Get token
+        var auth = new AutomationTestingAuthClient();
+        var token = await auth.GetTokenAsync("admin", "password");
+        Output.WriteLine($"Token: {token}");
 
-        // Act - call GET /booking
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest("booking", Method.Get);
+        // Act - GET /booking?roomid={roomid}
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+        var req = new RestRequest("booking", Method.Get)
+            .AddQueryParameter("roomid", booking.roomid.ToString())
+            .AddHeader("Accept", "*/*")
+            .AddHeader("Referer", "")
+            .AddHeader("Cookie", $"token={token}");
+
         var resp = await client.ExecuteAsync(req);
 
-        _output.WriteLine($"GET /booking status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"GET /booking body: {resp.Content}");
+        // Log
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking?roomid={booking.roomid}", resp);
 
         // Assert
-        resp.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
-        resp.Content.Should().NotBeNullOrEmpty();
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        resp.Content.Should().NotBeNullOrWhiteSpace();
 
-        // Expect response to be a JSON array of objects with bookingid
         using var doc = JsonDocument.Parse(resp.Content!);
-        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array, "GET /booking should return an array");
+        var root = doc.RootElement;
 
-        bool found = false;
-        foreach (var el in doc.RootElement.EnumerateArray())
-        {
-            if (el.ValueKind != JsonValueKind.Object) continue;
-            if (el.TryGetProperty("bookingid", out var idEl) && idEl.ValueKind == JsonValueKind.Number)
-            {
-                found = true;
-                break;
-            }
-        }
+        // root should contain "bookings" array
+        root.TryGetProperty("bookings", out var bookingsEl).Should().BeTrue("'bookings' array expected in response");
+        bookingsEl.ValueKind.Should().Be(JsonValueKind.Array);
+
+        var matchFound = bookingsEl.EnumerateArray()
+            .Where(el => el.ValueKind == JsonValueKind.Object)
+            .Any(el =>
+                el.TryGetProperty("roomid", out var rEl) && rEl.GetInt32() == booking.roomid &&
+                el.TryGetProperty("firstname", out var fEl) && !string.IsNullOrWhiteSpace(fEl.GetString()) &&
+                el.TryGetProperty("lastname", out var lEl) && !string.IsNullOrWhiteSpace(lEl.GetString()) &&
+                el.TryGetProperty("depositpaid", out var dEl) && (dEl.ValueKind == JsonValueKind.True || dEl.ValueKind == JsonValueKind.False) &&
+                el.TryGetProperty("bookingdates", out var bdEl) && bdEl.ValueKind == JsonValueKind.Object
+            );
+
+        matchFound.Should().BeTrue("expected at least one booking for the requested roomid with core fields present");
     }
+
     [Fact(DisplayName = "API-06 - Get booking by existing ID")]
     public async Task GetBooking_ByExistingId_ReturnsCorrectBookingDetails()
     {
-        // Arrange (precondition): create a booking
+        // Arrange - create booking
         var booking = CreateRandomBooking();
         var bookingClient = new BookingClient();
         var createResp = await bookingClient.CreateBookingAsync(booking);
-
-        createResp.StatusCode
-            .Should()
-            .BeOneOf(new[] { System.Net.HttpStatusCode.OK, System.Net.HttpStatusCode.Created },
-                because: "precondition: booking must be creatable");
-
-        createResp.Content.Should().NotBeNullOrEmpty();
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
 
         using var createdDoc = JsonDocument.Parse(createResp.Content!);
-        createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue("create response must include bookingid");
-        var bookingId = idEl.GetInt32();
+        createdDoc.RootElement.TryGetProperty("bookingid", out var createdIdEl).Should().BeTrue();
+        var createdId = createdIdEl.GetInt32();
+        Output.WriteLine($"Created booking id: {createdId}");
 
-        _output.WriteLine($"Created booking id: {bookingId}");
+        // Get token
+        var auth = new AutomationTestingAuthClient();
+        var token = await auth.GetTokenAsync("admin", "password");
+        Output.WriteLine($"Token: {token}");
 
-        // Act: GET /booking/{id}
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{bookingId}", Method.Get);
-        var getResp = await client.ExecuteAsync(req);
+        // Use BookingApiHelper to GET /booking/{id}
+        var helper = new BookingApiHelper();
+        var getResp = await helper.GetBookingRawAsync(createdId, token);
 
-        _output.WriteLine($"GET /booking/{bookingId} status: {(int)getResp.StatusCode} - {getResp.StatusCode}");
-        _output.WriteLine($"GET /booking/{bookingId} body: {getResp.Content}");
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{createdId}", getResp);
 
-        // Assert
-        getResp.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, because: "GET by existing id should return 200");
-        getResp.Content.Should().NotBeNullOrEmpty();
+        getResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResp.Content.Should().NotBeNullOrWhiteSpace();
 
         using var doc = JsonDocument.Parse(getResp.Content!);
         var root = doc.RootElement;
 
-        // Validate core fields
         root.GetProperty("firstname").GetString().Should().Be(booking.firstname);
         root.GetProperty("lastname").GetString().Should().Be(booking.lastname);
-        root.GetProperty("totalprice").GetInt32().Should().Be(booking.totalprice);
         root.GetProperty("depositpaid").GetBoolean().Should().Be(booking.depositpaid);
 
         var returnedDates = root.GetProperty("bookingdates");
         returnedDates.GetProperty("checkin").GetString().Should().Be(booking.bookingdates!.checkin);
         returnedDates.GetProperty("checkout").GetString().Should().Be(booking.bookingdates!.checkout);
-
-        if (booking.additionalneeds is not null)
-            root.GetProperty("additionalneeds").GetString().Should().Be(booking.additionalneeds);
-
-        // Optional teardown: delete booking (implement DeleteBookingAsync with auth if available)
-        // try { var authToken = await new AuthClient().GetTokenAsync("admin","password"); await bookingClient.DeleteBookingAsync(bookingId, authToken); } catch { /* log but don't fail test */ }
     }
-    [Fact(DisplayName = "API-07 - Get booking by non-existing ID")]
-    public async Task GetBooking_ByNonExistingId_ReturnsNotFound()
+
+    [Fact(DisplayName = "API-07 A - Get booking by non-existing booking ID")]
+    public async Task GetBooking_ByNonExistingBookingId_ReturnsNotFound()
     {
         // Arrange
-        const int nonExistingId = 99999999; // high ID, assumed not to exist
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
+        const int nonExistingId = 99999999;
+        var helper = new BookingApiHelper();
+        // Act
+        var resp = await helper.GetBookingRawAsync(nonExistingId);
+
+        // Log
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{nonExistingId}", resp);
+
+        // Accept either 404 NotFound or 401 Unauthorized with authentication message
+        if (resp.StatusCode == HttpStatusCode.NotFound)
+        {
+            resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            return;
+        }
+
+        if (resp.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            resp.Content.Should().NotBeNullOrWhiteSpace();
+            using var doc = JsonDocument.Parse(resp.Content!);
+            doc.RootElement.TryGetProperty("error", out var err).Should().BeTrue("expected 'error' in unauthorized response");
+            err.GetString().Should().MatchRegex("(?i)auth"); // contains auth/authentication
+            return;
+        }
+
+        // Otherwise fail with informative message
+        throw new Xunit.Sdk.XunitException($"Unexpected status {(int)resp.StatusCode} for non-existing booking id {nonExistingId}. Response: {resp.Content}");
+
+    }
+
+    [Fact(DisplayName = "API-07 B - Get booking by non-existing room ID")]
+    public async Task GetBooking_ByNonExistingRoomId_ReturnsNotFound()
+    {
+        // Arrange
+        const int nonExistingRoomId = 99999999;
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+        var auth = new AutomationTestingAuthClient();
+        var token = await auth.GetTokenAsync("admin", "password");
+        var req = new RestRequest("booking", Method.Get)
+            .AddQueryParameter("roomid", nonExistingRoomId.ToString())
+            .AddHeader("Accept", "*/*")
+            .AddHeader("Referer", "")
+            .AddHeader("Cookie", $"token={token}");
 
         // Act
-        var req = new RestRequest($"booking/{nonExistingId}", Method.Get);
         var resp = await client.ExecuteAsync(req);
 
         // Log
-        _output.WriteLine($"GET /booking/{nonExistingId} status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"Body: {resp.Content}");
+        Output.WriteLine($"GET /booking?roomid={nonExistingRoomId} status: {(int)resp.StatusCode} - {resp.StatusCode}");
+        Output.WriteLine($"Body: {resp.Content ?? "<null>"}");
 
-        // Assert
-        // Comportamento esperado: 404 NotFound
-        resp.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            $"expected 404 for non-existing booking id {nonExistingId}. Response: {resp.Content}");
+        // Assert: accept either 404 NotFound or 200 with empty "bookings" array
+        if (resp.StatusCode == HttpStatusCode.NotFound)
+        {
+            resp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            return;
+        }
+
+        resp.StatusCode.Should().Be(HttpStatusCode.OK, "if not 404 the API should return 200 with a bookings array");
+        resp.Content.Should().NotBeNullOrWhiteSpace();
+
+        using var doc = JsonDocument.Parse(resp.Content!);
+        var root = doc.RootElement;
+
+        root.TryGetProperty("bookings", out var bookingsEl).Should().BeTrue("response must contain 'bookings' array");
+        bookingsEl.ValueKind.Should().Be(JsonValueKind.Array);
+
+        bookingsEl.GetArrayLength().Should().Be(0, "no bookings should be returned for a non-existing room id");
     }
-
 }

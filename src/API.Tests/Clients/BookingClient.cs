@@ -4,19 +4,23 @@ using System.Text.Json;
 public class BookingClient
 {
     private readonly RestClient _client;
-
+    private readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+    // Default ctor uses AutomationTesting API base (keeps previous behavior)
     public BookingClient() =>
-        _client = ApiClientFactory.Create(Settings.ApiBaseUrl);
+        _client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+
+    // New ctor for dependency injection / different base (e.g., Restful-Booker)
+    public BookingClient(RestClient client) =>
+        _client = client ?? throw new ArgumentNullException(nameof(client));
 
     public async Task<RestResponse> CreateBookingAsync(Booking booking)
     {
         Console.WriteLine("Enter CreateBookingAsync");
 
-        var options = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
-        var json = JsonSerializer.Serialize(booking, options);
+        var json = JsonSerializer.Serialize(booking, _jsonOptions);
         Console.WriteLine($"Request JSON: {json}");
 
         var req = new RestRequest("booking", Method.Post);
@@ -37,6 +41,7 @@ public class BookingClient
         var req = new RestRequest($"booking/{id}", Method.Get);
         return await _client.ExecuteAsync(req);
     }
+
     public async Task<RestResponse> DeleteBookingAsync(int id, string token)
     {
         var req = new RestRequest($"booking/{id}", Method.Delete)
@@ -50,6 +55,7 @@ public class BookingClient
 
         return resp;
     }
+
     public async Task<RestResponse> PatchBookingFirstnameAsync(int id, string newFirstname, string token)
     {
         var req = new RestRequest($"booking/{id}", Method.Patch)

@@ -1,5 +1,6 @@
 public class Booking
 {
+    public int roomid { get; set; }
     public string? firstname { get; set; }
     public string? lastname { get; set; }
     public int totalprice { get; set; }

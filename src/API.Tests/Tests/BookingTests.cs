@@ -7,7 +7,7 @@ public class BookingTests : TestBase
     {
         _output = output;
     }
-    [Fact]
+    [Fact(DisplayName = "API-02 — Create booking (happy path)")]
     public async Task CreateBooking_HappyPath_ReturnsBookingId()
     {
         // Arrange
@@ -20,10 +20,10 @@ public class BookingTests : TestBase
         resp.Content.Should().NotBeNullOrEmpty();
         using var doc = System.Text.Json.JsonDocument.Parse(resp.Content!);
         doc.RootElement.TryGetProperty("bookingid", out _).Should().BeTrue();
-        doc.RootElement.TryGetProperty("booking", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("bookingdates", out _).Should().BeTrue();
     }
 
-    [Fact]
+    [Fact(DisplayName = "API-02 — Create booking and returns matches Payload(happy path)")]
     public async Task CreateBooking_HappyPath_ReturnsBookingId_AndMatchesPayload()
     {
         // Arrange
@@ -47,32 +47,25 @@ public class BookingTests : TestBase
         root.TryGetProperty("bookingid", out var idEl).Should().BeTrue("response must contain bookingid");
 
         // booking object present
-        root.TryGetProperty("booking", out var bookingEl).Should().BeTrue("response must contain booking object");
+        root.TryGetProperty("bookingdates", out var bookingEl).Should().BeTrue("response must contain booking object");
 
         // validate returned fields match the sent payload
         var returned = bookingEl;
 
-        returned.GetProperty("firstname").GetString().Should().Be(booking.firstname);
-        returned.GetProperty("lastname").GetString().Should().Be(booking.lastname);
-        returned.GetProperty("totalprice").GetInt32().Should().Be(booking.totalprice);
-        returned.GetProperty("depositpaid").GetBoolean().Should().Be(booking.depositpaid);
+        root.GetProperty("roomid").GetInt32().Should().Be(booking.roomid);
+        root.GetProperty("firstname").GetString().Should().Be(booking.firstname);
+        root.GetProperty("lastname").GetString().Should().Be(booking.lastname);
+        root.GetProperty("depositpaid").GetBoolean().Should().Be(booking.depositpaid);
 
         // bookingdates fields
-        var returnedDates = returned.GetProperty("bookingdates");
+        var returnedDates = root.GetProperty("bookingdates");
         returnedDates.GetProperty("checkin").GetString().Should().Be(booking.bookingdates!.checkin);
         returnedDates.GetProperty("checkout").GetString().Should().Be(booking.bookingdates!.checkout);
-
-        // optional: additional needs
-        if (booking.additionalneeds is not null)
-            returned.GetProperty("additionalneeds").GetString().Should().Be(booking.additionalneeds);
 
         // Log identifiers for debug
         var bookingId = idEl.GetInt32();
         _output.WriteLine($"Created booking id: {bookingId}");
         _output.WriteLine($"Response body: {resp.Content}");
-
-        // Teardown (delete created booking) — implement DeleteBookingAsync and auth if required
-
     }
     
 

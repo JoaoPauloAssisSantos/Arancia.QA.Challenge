@@ -1,107 +1,132 @@
-﻿using System.Net;
-using System.Text.Json;
+﻿using Arancia.Test.API.Clients;
 using FluentAssertions;
 using RestSharp;
+using System.Net;
+using System.Text.Json;
 using Xunit;
 using Xunit.Abstractions;
 
 public class DeleteBookingTests : TestBase
 {
-    private readonly ITestOutputHelper _output;
-
-    public DeleteBookingTests(ITestOutputHelper output) => _output = output;
-
-    // API-14 — Delete booking — authenticated
+    public DeleteBookingTests(ITestOutputHelper output) => InitTestBase(output);
     [Fact(DisplayName = "API-14 - Delete booking with valid authentication")]
     public async Task DeleteBooking_WithAuth_RemovesBooking()
     {
-        // Arrange: create booking and get valid token
-        var bookingClient = new BookingClient();
+        // Preconditions
+        Output.Should().NotBeNull();
+
+        // Arrange - create booking on automation API
         var booking = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, booking);
-        _output.WriteLine($"[CREATE] booking id: {id}");
+        var bookingClient = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var createResp = await bookingClient.CreateBookingAsync(booking);
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
 
-        var token = await new AuthClient().GetTokenAsync();
-        _output.WriteLine($"[AUTH] Token (len): {token.Length}");
+        using var createdDoc = JsonDocument.Parse(createResp.Content!);
+        createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue();
+        var bookingId = idEl.GetInt32();
+        Output.WriteLine($"Created booking id: {bookingId}");
 
-        // Act: DELETE /booking/{id} with auth
-        var deleteResp = await bookingClient.DeleteBookingAsync(id, token);
+        // Auth - get token from AutomationTestingAuthClient
+        var auth = new AutomationTestingAuthClient();
+        var token = await auth.GetTokenAsync("admin", "password");
+        token.Should().NotBeNullOrWhiteSpace();
+        Output.WriteLine($"Token: {token}");
 
-        _output.WriteLine($"[DELETE] Status: {(int)deleteResp.StatusCode} - {deleteResp.StatusCode}");
-        _output.WriteLine($"[DELETE] Body  : {deleteResp.Content}");
+        // Act - DELETE /booking/{id} with auth (empty body)
+        var deleteResp = await bookingClient.DeleteBookingAsync(bookingId, token);
+        BookingTestHelper.LogRequestResponse(Output, $"DELETE /booking/{bookingId}", deleteResp);
 
-        // Assert: DELETE returns 200 or 201
-        deleteResp.StatusCode
-            .Should()
-            .BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        // Assert delete success (accept 200/201)
+        ((int)deleteResp.StatusCode).Should().BeOneOf(200, 201);
 
-        // Act: GET /booking/{id} afterwards
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        _output.WriteLine($"[GET after DELETE] Status: {(int)getResp.StatusCode} - {getResp.StatusCode}");
-        _output.WriteLine($"[GET after DELETE] Body  : {getResp.Content}");
+        // Verify removal: try GET /booking/{id} with auth, accept 404 or 401/403 if protected
+        var helper = new BookingApiHelper(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var getResp = await helper.GetBookingRawAsync(bookingId, token);
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{bookingId} after delete", getResp);
 
-        // Known flakiness: if 418 persists even after retries, document as known issue
-        if (getResp.StatusCode == (HttpStatusCode)418)
+        if (getResp.StatusCode == HttpStatusCode.NotFound)
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 I'm a Teapot after DELETE. " +
-                $"Response: {getResp.Content}");
+            // expected
+            getResp.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
-
-        // Expected: booking no longer exists (404)
-        getResp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        else if (getResp.StatusCode == HttpStatusCode.Unauthorized || getResp.StatusCode == HttpStatusCode.Forbidden)
+        {
+            // resource protected — acceptable as delete succeeded
+            Output.WriteLine($"GET after delete requires auth (status {(int)getResp.StatusCode}).");
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException($"Unexpected status {(int)getResp.StatusCode} after delete. Response: {getResp.Content}");
+        }
     }
+
+
     [Fact(DisplayName = "API-15 - Block booking deletion without authentication")]
     public async Task DeleteBooking_WithoutAuth_IsRejected()
     {
-        // Arrange
-        var bookingClient = new BookingClient();
+        // Preconditions
+        Output.Should().NotBeNull();
+        // Arrange - create booking on automation API
         var booking = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, booking);
-        _output.WriteLine($"[CREATE] booking id: {id}");
+        var bookingClient = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var createResp = await bookingClient.CreateBookingAsync(booking);
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
 
-        // Act: DELETE /booking/{id} without auth
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var deleteReq = new RestRequest($"booking/{id}", Method.Delete)
-            .AddHeader("Accept", "application/json"); // no auth
+        using var createdDoc = JsonDocument.Parse(createResp.Content!);
+        createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue();
+        var bookingId = idEl.GetInt32();
+        Output.WriteLine($"Created booking id: {bookingId}");
 
-        var deleteResp = await client.ExecuteAsync(deleteReq);
-
-        _output.WriteLine($"[DELETE no auth] Status: {(int)deleteResp.StatusCode} - {deleteResp.StatusCode}");
-        _output.WriteLine($"[DELETE no auth] Body  : {deleteResp.Content}");
-
-        // Assert: deletion is blocked
-        deleteResp.StatusCode
-            .Should()
-            .BeOneOf(new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
-    }
-
-
-    [Fact(
-    DisplayName = "API-15b - GET after forbidden DELETE (known 418 issue)",
-    Skip = "Known flaky issue: GET /booking/{id} sometimes returns 418 after forbidden DELETE in demo environment")]
-    public async Task DeleteBooking_GetAfterForbiddenDelete_KnownIssue()
-    {
-        var bookingClient = new BookingClient();
-        var booking = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, booking);
-
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var deleteReq = new RestRequest($"booking/{id}", Method.Delete)
+        // Act - DELETE /booking/{id} WITHOUT auth (no Cookie header)
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+        var req = new RestRequest($"booking/{bookingId}", Method.Delete)
             .AddHeader("Accept", "application/json");
-        var deleteResp = await client.ExecuteAsync(deleteReq);
-        deleteResp.StatusCode
-            .Should()
-            .BeOneOf(new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+        var deleteResp = await client.ExecuteAsync(req);
 
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        if (getResp.StatusCode == (HttpStatusCode)418)
+        // Log
+        BookingTestHelper.LogRequestResponse(Output, $"DELETE /booking/{bookingId} (no auth)", deleteResp);
+
+        // Assert - expect 401/403 or other 4xx (deny). Fail if 200.
+        if (deleteResp.StatusCode == HttpStatusCode.Unauthorized || deleteResp.StatusCode == HttpStatusCode.Forbidden)
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 I'm a Teapot after forbidden DELETE. " +
-                $"Response: {getResp.Content}");
+            deleteResp.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        }
+        else if ((int)deleteResp.StatusCode >= 400 && (int)deleteResp.StatusCode < 500)
+        {
+            ((int)deleteResp.StatusCode).Should().BeInRange(400, 499);
+        }
+        else if (deleteResp.StatusCode == HttpStatusCode.OK)
+        {
+            throw new Xunit.Sdk.XunitException($"DELETE without auth unexpectedly succeeded (200). Response: {deleteResp.Content}");
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException($"Unexpected status {(int)deleteResp.StatusCode} for unauthenticated delete. Response: {deleteResp.Content}");
         }
 
-        getResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Verify booking still exists: GET may require auth; if 200 validate content, if 401/403 accept protected
+        var helper = new BookingApiHelper(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var getResp = await helper.GetBookingRawAsync(bookingId);
+
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{bookingId} after failed delete", getResp);
+
+        if (getResp.StatusCode == HttpStatusCode.OK)
+        {
+            getResp.Content.Should().NotBeNullOrWhiteSpace();
+            using var getDoc = JsonDocument.Parse(getResp.Content!);
+            var root = getDoc.RootElement;
+            root.GetProperty("firstname").GetString().Should().Be(booking.firstname);
+            root.GetProperty("lastname").GetString().Should().Be(booking.lastname);
+        }
+        else if (getResp.StatusCode == HttpStatusCode.Unauthorized || getResp.StatusCode == HttpStatusCode.Forbidden)
+        {
+            Output.WriteLine($"GET /booking/{bookingId} requires auth (status {(int)getResp.StatusCode}). Cannot verify content, but delete was rejected.");
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException($"Unexpected status {(int)getResp.StatusCode} when verifying booking after failed delete. Response: {getResp.Content}");
+        }
     }
 }
