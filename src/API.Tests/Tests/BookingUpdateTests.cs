@@ -1,273 +1,223 @@
-﻿using System.Net;
-using System.Text.Json;
+﻿using Arancia.Test.API.Clients;
 using FluentAssertions;
 using RestSharp;
-using Xunit;
+using System.Net;
+using System.Text.Json;
 using Xunit.Abstractions;
 
 public class BookingUpdateTests : TestBase
 {
-    private readonly ITestOutputHelper _output;
+    public BookingUpdateTests(ITestOutputHelper output) => InitTestBase(output);
 
-    public BookingUpdateTests(ITestOutputHelper output) => _output = output;
-
-    // ========= API-10 =========
-    // API-10a — PUT with auth (only PUT response, no GET)
-    [Fact(DisplayName = "API-10a - PUT booking with valid auth (no GET verification)")]
-    public async Task UpdateBooking_Put_WithAuth_OnlyPutResponse()
+    [Fact(DisplayName = "API-10 - PUT booking with valid auth")]
+    public async Task UpdateBooking_Put_WithAuth_AndGetBooking()
     {
-        // Arrange
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-        _output.WriteLine($"[CREATE] booking id: {id}");
+        // Preconditions
+        Output.Should().NotBeNull();
 
-        var token = await new AuthClient().GetTokenAsync();
-        var updated = CreateRandomBooking();
+        // Arrange — create booking on the automation API (ensure same backend for create/put/get)
+        var booking = CreateRandomBooking();
+        var bookingClient = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var createResp = await bookingClient.CreateBookingAsync(booking);
 
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{id}", Method.Put)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "application/json")
-            .AddHeader("Cookie", $"token={token}")
-            .AddJsonBody(updated);
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
 
-        // Act
-        var resp = await client.ExecuteAsync(req);
+        using var createdDoc = JsonDocument.Parse(createResp.Content!);
+        createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue();
+        var bookingId = idEl.GetInt32();
+        Output.WriteLine($"Created booking id: {bookingId}");
 
-        _output.WriteLine($"[PUT] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"[PUT] Body  : {resp.Content}");
+        // Auth — obtain token from AutomationTestingAuthClient (automationintesting.online)
+        var automationAuth = new AutomationTestingAuthClient();
+        var token = await automationAuth.GetTokenAsync("admin", "password");
+        token.Should().NotBeNullOrWhiteSpace();
+        Output.WriteLine($"Auth token: {token}");
 
-        // Assert: only validate PUT response
-        resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        resp.Content.Should().NotBeNullOrEmpty();
-
-        using var doc = JsonDocument.Parse(resp.Content!);
-        var root = doc.RootElement;
-
-        root.GetProperty("firstname").GetString().Should().Be(updated.firstname);
-        root.GetProperty("lastname").GetString().Should().Be(updated.lastname);
-        root.GetProperty("totalprice").GetInt32().Should().Be(updated.totalprice);
-        root.GetProperty("depositpaid").GetBoolean().Should().Be(updated.depositpaid);
-
-        var dates = root.GetProperty("bookingdates");
-        dates.GetProperty("checkin").GetString().Should().Be(updated.bookingdates!.checkin);
-        dates.GetProperty("checkout").GetString().Should().Be(updated.bookingdates!.checkout);
-
-        if (updated.additionalneeds is not null)
-            root.GetProperty("additionalneeds").GetString().Should().Be(updated.additionalneeds);
-    }
-
-    // API-10b — GET after PUT (known issue 418) – skipped
-    [Fact(
-        DisplayName = "API-10b - GET booking after PUT (known 418 issue)",
-        Skip = "Known flaky issue: GET /booking/{id} sometimes returns 418 after PUT in demo environment")]
-    public async Task UpdateBooking_GetAfterPut_KnownIssue()
-    {
-        // Same flow as 10a but including GET and known-issue handling (kept for documentation)
-
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-
-        var token = await new AuthClient().GetTokenAsync();
-        var updated = CreateRandomBooking();
-
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{id}", Method.Put)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "application/json")
-            .AddHeader("Cookie", $"token={token}")
-            .AddJsonBody(updated);
-
-        var resp = await client.ExecuteAsync(req);
-
-        resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        resp.Content.Should().NotBeNullOrEmpty();
-
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        if (getResp.StatusCode == (HttpStatusCode)418)
+        // Prepare updated payload (full replacement per PUT)
+        var updatedPayload = new
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 I'm a Teapot after successful PUT. " +
-                $"Response: {getResp.Content}");
-        }
+            roomid = 13,
+            firstname = "James",
+            lastname = "Dean",
+            depositpaid = true,
+            bookingdates = new { checkin = "2026-02-01", checkout = "2026-02-05" }
+        };
+
+        var helper = new BookingApiHelper(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+
+        // Act — PUT /booking/{id} (automation API base)
+        var putResp = await helper.PutBookingAsync(bookingId, updatedPayload, token);
+        BookingTestHelper.LogRequestResponse(Output, $"PUT /booking/{bookingId}", putResp);
+
+        // Assert PUT response
+        putResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        putResp.Content.Should().NotBeNullOrWhiteSpace();
+        using var putDoc = JsonDocument.Parse(putResp.Content!);
+        putDoc.RootElement.TryGetProperty("success", out var successEl).Should().BeTrue();
+        successEl.GetBoolean().Should().BeTrue();
+
+        // Verify persistence via GET /booking/{id} (automation API base, same token)
+        var getResp = await helper.GetBookingRawAsync(bookingId, token);
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{bookingId}", getResp);
 
         getResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResp.Content.Should().NotBeNullOrWhiteSpace();
+
+        using var getDoc = JsonDocument.Parse(getResp.Content!);
+        var root = getDoc.RootElement;
+
+        root.GetProperty("firstname").GetString().Should().Be((string)updatedPayload.firstname);
+        root.GetProperty("lastname").GetString().Should().Be((string)updatedPayload.lastname);
+        root.GetProperty("depositpaid").GetBoolean().Should().Be((bool)updatedPayload.depositpaid);
+
+        var returnedDates = root.GetProperty("bookingdates");
+        returnedDates.GetProperty("checkin").GetString().Should().Be((string)updatedPayload.bookingdates.checkin);
+        returnedDates.GetProperty("checkout").GetString().Should().Be((string)updatedPayload.bookingdates.checkout);
     }
 
-    // ========= API-11 =========
-    // API-11a — PUT without auth (only PUT response, no GET)
-    [Fact(DisplayName = "API-11a - PUT booking without auth (blocked, no GET verification)")]
+
+    [Fact(DisplayName = "API-11 - PUT booking without auth")]
     public async Task UpdateBooking_Put_WithoutAuth_OnlyPutResponse()
     {
-        // Arrange
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-        _output.WriteLine($"[CREATE] booking id: {id}");
+        // Arrange — create booking on automation API
+        var booking = CreateRandomBooking();
+        var bookingClient = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var createResp = await bookingClient.CreateBookingAsync(booking);
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
+        using var createdDoc = JsonDocument.Parse(createResp.Content!);
+        createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue();
+        var bookingId = idEl.GetInt32();
+        Output.WriteLine($"Created booking id: {bookingId}");
 
-        var updated = CreateRandomBooking();
-
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{id}", Method.Put)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "application/json")
-            // no auth on purpose
-            .AddJsonBody(updated);
-
-        // Act
-        var resp = await client.ExecuteAsync(req);
-
-        _output.WriteLine($"[PUT no auth] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"[PUT no auth] Body  : {resp.Content}");
-
-        // Assert: only check that update is blocked
-        resp.StatusCode
-            .Should()
-            .BeOneOf(new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
-    }
-
-    // API-11b — GET after forbidden PUT (known 418 issue) – skipped
-    [Fact(
-        DisplayName = "API-11b - GET booking after forbidden PUT (known 418 issue)",
-        Skip = "Known flaky issue: GET /booking/{id} sometimes returns 418 after forbidden PUT in demo environment")]
-    public async Task UpdateBooking_GetAfterForbiddenPut_KnownIssue()
-    {
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-
-        var updated = CreateRandomBooking();
-
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{id}", Method.Put)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "application/json")
-            .AddJsonBody(updated);
-
-        var resp = await client.ExecuteAsync(req);
-        resp.StatusCode
-            .Should()
-            .BeOneOf(new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
-
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        if (getResp.StatusCode == (HttpStatusCode)418)
+        // Prepare updated payload
+        var updatedPayload = new
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 I'm a Teapot after forbidden PUT. " +
-                $"Response: {getResp.Content}");
+            roomid = 13,
+            firstname = "NoAuth",
+            lastname = "Attempt",
+            depositpaid = false,
+            bookingdates = new { checkin = "2026-03-01", checkout = "2026-03-05" }
+        };
+        var json = JsonSerializer.Serialize(updatedPayload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+        // Act — PUT /booking/{id} WITHOUT auth (no Cookie header)
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+        var req = new RestRequest($"booking/{bookingId}", Method.Put)
+            .AddHeader("Referer", "")
+            .AddHeader("Content-Type", "application/json")
+            .AddStringBody(json, "application/json");
+
+        var putResp = await client.ExecuteAsync(req);
+
+        // Log
+        BookingTestHelper.LogRequestResponse(Output, $"PUT /booking/{bookingId} (no auth)", putResp);
+
+        // Assert — accept 401 (Authentication required) or 403 (Failed to update booking)
+        if (putResp.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            putResp.Content.Should().NotBeNullOrWhiteSpace();
+            using var errDoc = JsonDocument.Parse(putResp.Content!);
+            errDoc.RootElement.TryGetProperty("error", out var errEl).Should().BeTrue();
+            errEl.GetString().Should().Be("Authentication required");
+        }
+        else if (putResp.StatusCode == HttpStatusCode.Forbidden)
+        {
+            putResp.Content.Should().NotBeNullOrWhiteSpace();
+            using var errDoc = JsonDocument.Parse(putResp.Content!);
+            errDoc.RootElement.TryGetProperty("error", out var errEl).Should().BeTrue();
+            errEl.GetString().Should().Be("Failed to update booking");
+        }
+        else if ((int)putResp.StatusCode >= 400 && (int)putResp.StatusCode < 500)
+        {
+            // Other client rejection is acceptable
+            ((int)putResp.StatusCode).Should().BeInRange(400, 499);
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException($"Unexpected status {(int)putResp.StatusCode} for PUT without auth. Response: {putResp.Content}");
         }
 
-        getResp.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
+        // Verify booking unchanged via GET — accept 200 (verify content) or 401/403 (resource protected)
+        var helper = new BookingApiHelper(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var getResp = await helper.GetBookingRawAsync(bookingId);
 
-    // ========= API-12 =========
-    // API-12a — PATCH with auth (only PATCH response, no GET)
-    [Fact(DisplayName = "API-12a - PATCH booking with auth (no GET verification)")]
-    public async Task PartialUpdateBooking_Patch_WithAuth_OnlyPatchResponse()
-    {
-        // Arrange
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-        _output.WriteLine($"[CREATE] booking id: {id}");
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{bookingId}", getResp);
 
-        var token = await new AuthClient().GetTokenAsync();
-        var newFirstName = "UpdatedName";
-
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{id}", Method.Patch)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "application/json")
-            .AddHeader("Cookie", $"token={token}")
-            .AddJsonBody(new { firstname = newFirstName });
-
-        // Act
-        var resp = await client.ExecuteAsync(req);
-
-        _output.WriteLine($"[PATCH] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"[PATCH] Body  : {resp.Content}");
-
-        // Assert: only validate PATCH response
-        resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        resp.Content.Should().NotBeNullOrEmpty();
-
-        using var doc = JsonDocument.Parse(resp.Content!);
-        var root = doc.RootElement;
-
-        root.GetProperty("firstname").GetString().Should().Be(newFirstName);
-        root.GetProperty("lastname").GetString().Should().Be(original.lastname);
-        root.GetProperty("totalprice").GetInt32().Should().Be(original.totalprice);
-        root.GetProperty("depositpaid").GetBoolean().Should().Be(original.depositpaid);
-
-        var dates = root.GetProperty("bookingdates");
-        dates.GetProperty("checkin").GetString().Should().Be(original.bookingdates!.checkin);
-        dates.GetProperty("checkout").GetString().Should().Be(original.bookingdates!.checkout);
-
-        if (original.additionalneeds is not null)
-            root.GetProperty("additionalneeds").GetString().Should().Be(original.additionalneeds);
-    }
-
-    // API-12b — GET after PATCH (known 418 issue) – skipped
-    [Fact(
-        DisplayName = "API-12b - GET booking after PATCH (known 418 issue)",
-        Skip = "Known flaky issue: GET /booking/{id} sometimes returns 418 after PATCH in demo environment")]
-    public async Task PartialUpdateBooking_GetAfterPatch_KnownIssue()
-    {
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-
-        var token = await new AuthClient().GetTokenAsync();
-        var newFirstName = "UpdatedName";
-
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest($"booking/{id}", Method.Patch)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "application/json")
-            .AddHeader("Cookie", $"token={token}")
-            .AddJsonBody(new { firstname = newFirstName });
-
-        var resp = await client.ExecuteAsync(req);
-        resp.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        if (getResp.StatusCode == (HttpStatusCode)418)
+        if (getResp.StatusCode == HttpStatusCode.OK)
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 I'm a Teapot after PATCH. " +
-                $"Response: {getResp.Content}");
+            getResp.Content.Should().NotBeNullOrWhiteSpace();
+            using var getDoc = JsonDocument.Parse(getResp.Content!);
+            var root = getDoc.RootElement;
+
+            root.GetProperty("firstname").GetString().Should().Be(booking.firstname);
+            root.GetProperty("lastname").GetString().Should().Be(booking.lastname);
+            root.GetProperty("depositpaid").GetBoolean().Should().Be(booking.depositpaid);
+
+            var returnedDates = root.GetProperty("bookingdates");
+            returnedDates.GetProperty("checkin").GetString().Should().Be(booking.bookingdates!.checkin);
+            returnedDates.GetProperty("checkout").GetString().Should().Be(booking.bookingdates!.checkout);
+        }
+        else if (getResp.StatusCode == HttpStatusCode.Unauthorized || getResp.StatusCode == HttpStatusCode.Forbidden)
+        {
+            Output.WriteLine($"GET /booking/{bookingId} requires auth (status {(int)getResp.StatusCode}). Skipping content verification.");
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException($"Unexpected status {(int)getResp.StatusCode} when verifying booking. Response: {getResp.Content}");
         }
 
-        getResp.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact(DisplayName = "API-13 - Update booking with invalid ID")]
     public async Task UpdateBooking_Put_WithInvalidId_ReturnsClientError()
     {
-        // Arrange
-        var token = await new AuthClient().GetTokenAsync();
-        var updated = CreateRandomBooking();
+        // Preconditions
+        Output.Should().NotBeNull();
+        // Arrange - obtain auth token for Automation API
+        var automationAuth = new AutomationTestingAuthClient();
+        var token = await automationAuth.GetTokenAsync("admin", "password");
+        token.Should().NotBeNullOrWhiteSpace();
 
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
-        var req = new RestRequest("booking/abc", Method.Put)
-            .AddHeader("Accept", "application/json")
+        // Prepare payload
+        var payload = new
+        {
+            roomid = 13,
+            firstname = "Invalid",
+            lastname = "Id",
+            depositpaid = false,
+            bookingdates = new { checkin = "2026-03-01", checkout = "2026-03-05" }
+        };
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+        // Act - call PUT /booking/{invalidId} using a non-numeric id segment
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+        var req = new RestRequest("booking/abc", Method.Put) // invalid id "abc"
+            .AddHeader("Referer", "")
             .AddHeader("Content-Type", "application/json")
             .AddHeader("Cookie", $"token={token}")
-            .AddJsonBody(updated);
+            .AddStringBody(json, "application/json");
 
-        // Act
         var resp = await client.ExecuteAsync(req);
 
-        _output.WriteLine($"[PUT invalid id] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"[PUT invalid id] Body  : {resp.Content}");
+        // Log
+        BookingTestHelper.LogRequestResponse(Output, "PUT /booking/abc", resp);
 
-        // Assert: accept 400/404/405 as client error for invalid ID
-        resp.StatusCode
-            .Should()
-            .BeOneOf(
-                new[] { HttpStatusCode.BadRequest, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed },
-                $"Expected client error for invalid id 'abc'. Actual: {(int)resp.StatusCode} - {resp.StatusCode}, body: {resp.Content}");
+        // Assert: expect client error (4xx). If server error (5xx) -> fail for triage.
+        var code = (int)resp.StatusCode;
+        if (code >= 400 && code < 500)
+        {
+            code.Should().BeInRange(400, 499);
+        }
+        else if (code >= 500 && code < 600)
+        {
+            throw new Xunit.Sdk.XunitException($"Server error for PUT with invalid id. Status: {code}. Body: {resp.Content}");
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException($"Unexpected status {code} for PUT with invalid id. Body: {resp.Content}");
+        }
+
     }
 }

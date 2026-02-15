@@ -3,10 +3,10 @@ using FluentAssertions;
 using RestSharp;
 public class PingTests
 {
-    [Fact]
+    [Fact(DisplayName = "API-01 - Health Check (Ping)")]
     public async Task Ping_ShouldReturn201()
     {
-        var client = ApiClientFactory.Create(Settings.ApiBaseUrl);
+        var client = ApiClientFactory.Create(Settings.RestfulBookerBaseUrl);
         var req = new RestRequest("ping", Method.Get);
         var resp = await client.ExecuteAsync(req);
         resp.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);

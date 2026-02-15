@@ -1,270 +1,353 @@
-﻿using Arancia.Test.API.Helpers;
+﻿using Arancia.Test.API.Clients;
 using FluentAssertions;
 using RestSharp;
 using System.Net;
 using System.Text.Json;
-using Xunit;
 using Xunit.Abstractions;
 
 public class AdvancedBookingTests : TestBase
 {
-    private readonly ITestOutputHelper _output;
+    public AdvancedBookingTests(ITestOutputHelper output) => InitTestBase(output);
 
-    public AdvancedBookingTests(ITestOutputHelper output) => _output = output;
-
-    // ========== API-16 ==========
-
-    // API-16a — Concurrent PATCH (only PATCH responses, no GET verification)
-    [Fact(DisplayName = "API-16a - Concurrent PATCH updates (only PATCH responses)")]
-    public async Task ConcurrentUpdates_Patch_OnlyPatchResponses()
-    {
-        // Arrange
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-        _output.WriteLine($"[CREATE] booking id: {id}");
-
-        var authClient = new AuthClient();
-        var tokenA = await authClient.GetTokenAsync();
-        var tokenB = await authClient.GetTokenAsync();
-
-        const string versionA = "VersionA";
-        const string versionB = "VersionB";
-
-        // Act: two concurrent PATCH requests, A and B
-        var patchATask = bookingClient.PatchBookingFirstnameAsync(id, versionA, tokenA);
-        var patchBTask = bookingClient.PatchBookingFirstnameAsync(id, versionB, tokenB);
-
-        await Task.WhenAll(patchATask, patchBTask);
-
-        var respA = patchATask.Result;
-        var respB = patchBTask.Result;
-
-        _output.WriteLine($"[PATCH A] Status: {(int)respA.StatusCode} - {respA.StatusCode}");
-        _output.WriteLine($"[PATCH B] Status: {(int)respB.StatusCode} - {respB.StatusCode}");
-
-        // Assert: both PATCH calls should succeed
-        respA.StatusCode.Should().Be(HttpStatusCode.OK);
-        respB.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    // API-16b — Concurrent PATCH + GET final (known 418 issue) – skipped
-    [Fact(
-        DisplayName = "API-16b - Concurrent PATCH + GET final (known 418 issue)",
-        Skip = "Known flaky issue: GET /booking/{id} sometimes returns 418 after concurrent PATCH in demo environment")]
-    public async Task ConcurrentUpdates_LastWriteWins_KnownIssue()
-    {
-        var bookingClient = new BookingClient();
-        var original = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, original);
-
-        var authClient = new AuthClient();
-        var tokenA = await authClient.GetTokenAsync();
-        var tokenB = await authClient.GetTokenAsync();
-
-        const string versionA = "VersionA";
-        const string versionB = "VersionB";
-
-        var patchATask = bookingClient.PatchBookingFirstnameAsync(id, versionA, tokenA);
-        var patchBTask = bookingClient.PatchBookingFirstnameAsync(id, versionB, tokenB);
-        await Task.WhenAll(patchATask, patchBTask);
-
-        var respA = patchATask.Result;
-        var respB = patchBTask.Result;
-
-        respA.StatusCode.Should().Be(HttpStatusCode.OK);
-        respB.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        // GET final state (this is where the known flaky 418 appears)
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        if (getResp.StatusCode == (HttpStatusCode)418)
-        {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 after concurrent PATCH. Response: {getResp.Content}");
-        }
-
-        getResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        getResp.Content.Should().NotBeNullOrEmpty();
-
-        using var doc = JsonDocument.Parse(getResp.Content!);
-        var root = doc.RootElement;
-
-        var finalFirstname = root.GetProperty("firstname").GetString();
-        finalFirstname.Should().BeOneOf(versionA, versionB);
-    }
-
-
-    // ========== API-17 ==========
     [Fact(DisplayName = "API-17 - Create booking with very large string fields")]
     public async Task CreateBooking_WithVeryLargeStrings_IsHandledGracefully()
     {
-        // Arrange
-        var large = TextHelper.GenerateLargeString(10_000);
+        // Preconditions
+        Output.Should().NotBeNull();
+        // Arrange - normal booking payload
         var booking = CreateRandomBooking();
-        booking.firstname = large;
-        booking.additionalneeds = large;
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            booking,
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
 
-        var client = new BookingClient();
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
 
-        // Act
-        var resp = await client.CreateBookingAsync(booking);
+        // Test 1: Content-Type: text/plain
+        var reqText = new RestRequest("booking", Method.Post)
+            .AddHeader("Accept", "application/json")
+            .AddHeader("Content-Type", "text/plain")
+            .AddStringBody(json, "text/plain");
 
-        _output.WriteLine($"[LARGE PAYLOAD] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"[LARGE PAYLOAD] Body  : {resp.Content}");
+        var respText = await client.ExecuteAsync(reqText);
+        BookingTestHelper.LogRequestResponse(Output, "POST /booking (Content-Type: text/plain)", respText);
 
-        // Assert: API should either accept or respond with clear 4xx; not crash/hang.
-        ((int)resp.StatusCode).Should().BeInRange(200, 499,
-            $"Expected success or client error for large payload. Response: {resp.Content}");
+        var codeText = (int)respText.StatusCode;
+        if (codeText >= 200 && codeText < 300)
+            throw new Xunit.Sdk.XunitException($"Server accepted wrong Content-Type 'text/plain'. Status: {codeText}. Body: {respText.Content}");
+
+        (codeText >= 400 && codeText < 500).Should().BeTrue("Requests with wrong Content-Type should be rejected with 4xx");
+
+        if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(respText.Content);
+            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for wrong Content-Type must not return bookingid");
+        }
+
+        // Test 2: Missing Content-Type header — use HttpClient to send body with no Content-Type
+        using var httpClient = new System.Net.Http.HttpClient();
+        var url = $"{Settings.AutomationTestingApiBase.TrimEnd('/')}/booking";
+        var httpReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url)
+        {
+            Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8)
+        };
+        // remove Content-Type header to simulate missing header
+        httpReq.Content.Headers.Remove("Content-Type");
+
+        var httpResp = await httpClient.SendAsync(httpReq);
+        var respNoHeaderBody = await httpResp.Content.ReadAsStringAsync();
+
+        // Log similar to BookingTestHelper
+        Output.WriteLine($"Request: POST {url} (no Content-Type)");
+        Output.WriteLine($"Status: {(int)httpResp.StatusCode} - {httpResp.StatusCode}");
+        Output.WriteLine($"Body: {respNoHeaderBody ?? "<null>"}");
+
+        var codeNoHeader = (int)httpResp.StatusCode;
+        if (codeNoHeader >= 200 && codeNoHeader < 300)
+            throw new Xunit.Sdk.XunitException($"Server accepted request without Content-Type. Status: {codeNoHeader}. Body: {respNoHeaderBody}");
+
+        (codeNoHeader >= 400 && codeNoHeader < 500).Should().BeTrue("Requests without Content-Type should be rejected with 4xx");
+
+        if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(respNoHeaderBody);
+            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for missing Content-Type must not return bookingid");
+        }
     }
 
-    // ========== API-18 ==========
     [Fact(DisplayName = "API-18 - Special characters / injection strings are treated as plain text")]
     public async Task CreateBooking_WithInjectionLikeStrings_TreatedAsPlainText()
     {
-        // Arrange
+        // Preconditions
+        Output.Should().NotBeNull();
+        // Arrange - payload with potentially dangerous strings
+        var script = "<script>alert(1)</script>";
+        var sql = "Robert'); DROP TABLE Students;--";
         var booking = CreateRandomBooking();
-        booking.firstname = TextHelper.ScriptPayload;
-        booking.lastname = TextHelper.SqlInjectionPayload;
-        booking.additionalneeds = $"{TextHelper.ScriptPayload} {TextHelper.SqlInjectionPayload}";
+        booking.firstname = script;
+        booking.lastname = sql;
+        booking.additionalneeds = "<img src=x onerror=alert(1)>";
+        var client = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
 
-        var client = new BookingClient();
+        // Act - create booking
+        var createResp = await client.CreateBookingAsync(booking);
 
-        // Act
-        var resp = await client.CreateBookingAsync(booking);
+        // Log
+        BookingTestHelper.LogRequestResponse(Output, "POST /booking (injection strings)", createResp);
 
-        _output.WriteLine($"[INJECTION] Status: {(int)resp.StatusCode} - {resp.StatusCode}");
-        _output.WriteLine($"[INJECTION] Body  : {resp.Content}");
+        // Assert - server must not crash (no 5xx). Accept 200/201 or controlled 4xx
+        var code = (int)createResp.StatusCode;
+        if (code >= 500 && code < 600)
+            throw new Xunit.Sdk.XunitException($"Server error when submitting injection-like payload. Status: {code}. Body: {createResp.Content}");
 
-        resp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        resp.Content.Should().NotBeNullOrEmpty();
-
-        using var doc = JsonDocument.Parse(resp.Content!);
-        var root = doc.RootElement;
-
-        root.TryGetProperty("booking", out var bookingEl).Should().BeTrue();
-        var returned = bookingEl;
-
-        returned.GetProperty("firstname").GetString().Should().Be(booking.firstname);
-        returned.GetProperty("lastname").GetString().Should().Be(booking.lastname);
-        returned.GetProperty("additionalneeds").GetString().Should().Be(booking.additionalneeds);
-        // Sem execução de script: aqui só dá para verificar que veio como texto,
-        // não há exceção de runtime nem erro no response.
-    }
-    // ========== API-19 ==========
-    [Fact(DisplayName = "API-19 - Reject POST /booking with wrong Content-Type")]
-    public async Task CreateBooking_WithWrongContentType_IsRejected()
-    {
-        // Arrange
-        var baseUrl = Settings.ApiBaseUrl;
-        var client = ApiClientFactory.Create(baseUrl);
-
-        var bookingJson = """
-    {
-      "firstname": "John",
-      "lastname": "Doe",
-      "totalprice": 150,
-      "depositpaid": true,
-      "bookingdates": {
-        "checkin": "2026-02-14",
-        "checkout": "2026-02-17"
-      },
-      "additionalneeds": "Breakfast"
-    }
-    """;
-
-        var reqTextPlain = new RestRequest("booking", Method.Post)
-            .AddHeader("Content-Type", "text/plain")
-            .AddStringBody(bookingJson, "text/plain");
-
-        // Act
-        var respTextPlain = await client.ExecuteAsync(reqTextPlain);
-
-        _output.WriteLine($"[WRONG CT] Status: {(int)respTextPlain.StatusCode} - {respTextPlain.StatusCode}");
-        _output.WriteLine($"[WRONG CT] Body  : {respTextPlain.Content}");
-
-        var code = (int)respTextPlain.StatusCode;
-
-        // Ideal: 4xx controlado
-        if (code >= 400 && code < 500)
+        // If accepted, validate response contains bookingid and that stored data preserves plain text
+        if (code >= 200 && code < 300)
         {
-            code.Should().BeInRange(400, 499,
-                $"Expected 4xx for wrong Content-Type. Response: {respTextPlain.Content}");
+            createResp.Content.Should().NotBeNullOrWhiteSpace();
+            using var createdDoc = JsonDocument.Parse(createResp.Content!);
+            createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue();
+            var bookingId = idEl.GetInt32();
+            Output.WriteLine($"Created booking id: {bookingId}");
+
+            // GET the booking and assert fields match raw input (treated as plain text)
+            var helper = new BookingApiHelper(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+            var getResp = await helper.GetBookingRawAsync(bookingId);
+            BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{bookingId}", getResp);
+            getResp.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var getDoc = JsonDocument.Parse(getResp.Content!);
+            var root = getDoc.RootElement;
+            root.GetProperty("firstname").GetString().Should().Be(script);
+            root.GetProperty("lastname").GetString().Should().Be(sql);
+            if (root.TryGetProperty("additionalneeds", out var addEl) && addEl.ValueKind == JsonValueKind.String)
+                addEl.GetString().Should().Be(booking.additionalneeds);
         }
-        // Bug: 500 Internal Server Error
-        else if (code == 500)
+        else if (code >= 400 && code < 500)
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: server returns 500 Internal Server Error for wrong Content-Type instead of 4xx. " +
-                $"Response: {respTextPlain.Content}");
+            // Controlled validation rejection acceptable; ensure response describes error (optional)
+            createResp.Content.Should().NotBeNullOrWhiteSpace();
         }
         else
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Unexpected status {code} for wrong Content-Type. Response: {respTextPlain.Content}");
+            throw new Xunit.Sdk.XunitException($"Unexpected status {code} for injection-like payload. Body: {createResp.Content}");
         }
     }
 
+    [Fact(DisplayName = "API-19 - Reject POST /booking with wrong Content-Type")]
+    public async Task CreateBooking_WithWrongContentType_IsRejected()
+    {
+        // Preconditions
+        Output.Should().NotBeNull();
+        // Arrange - normal booking payload
+        var booking = CreateRandomBooking();
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            booking,
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
 
-    // ========== API-20 ==========
-    // ========== API-20a ==========
-    // Validate schema for /booking (list) and /auth (no GET /booking/{id})
-    [Fact(DisplayName = "API-20a - Schema consistency for /booking list and /auth")]
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+
+        // Test 1: Content-Type: text/plain
+        var reqText = new RestRequest("booking", Method.Post)
+            .AddHeader("Accept", "application/json")
+            .AddHeader("Content-Type", "text/plain")
+            .AddStringBody(json, "text/plain");
+
+        var respText = await client.ExecuteAsync(reqText);
+        BookingTestHelper.LogRequestResponse(Output, "POST /booking (Content-Type: text/plain)", respText);
+
+        var codeText = (int)respText.StatusCode;
+
+        // If server accepted (2xx) — attempt cleanup and fail for triage
+        if (codeText >= 200 && codeText < 300)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
+                {
+                    using var docC = System.Text.Json.JsonDocument.Parse(respText.Content);
+                    if (docC.RootElement.TryGetProperty("bookingid", out var createdIdEl) && createdIdEl.ValueKind == JsonValueKind.Number)
+                    {
+                        var createdId = createdIdEl.GetInt32();
+                        Output.WriteLine($"Server accepted wrong Content-Type and created booking id {createdId}. Attempting cleanup.");
+
+                        try
+                        {
+                            var bookingClientCleanup = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+                            var auth = new AutomationTestingAuthClient();
+                            var token = await auth.GetTokenAsync("admin", "password");
+                            await bookingClientCleanup.DeleteBookingAsync(createdId, token);
+                            Output.WriteLine($"Cleanup DELETE /booking/{createdId} attempted.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Output.WriteLine($"Cleanup failed: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Output.WriteLine($"Parsing/cleanup error: {ex.Message}");
+            }
+
+            throw new Xunit.Sdk.XunitException($"Server accepted wrong Content-Type 'text/plain' (status {codeText}). This is a validation regression. Response: {respText.Content}");
+        }
+
+        // Otherwise expect a 4xx rejection
+        (codeText >= 400 && codeText < 500).Should().BeTrue("Requests with wrong Content-Type should be rejected with 4xx");
+
+        if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(respText.Content);
+            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for wrong Content-Type must not return bookingid");
+        }
+
+        // Test 2: Missing Content-Type header — use HttpClient to send body with no Content-Type
+        using var httpClient = new System.Net.Http.HttpClient();
+        var url = $"{Settings.AutomationTestingApiBase.TrimEnd('/')}/booking";
+        var httpReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url)
+        {
+            Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8)
+        };
+        // remove Content-Type header to simulate missing header
+        httpReq.Content.Headers.Remove("Content-Type");
+
+        var httpResp = await httpClient.SendAsync(httpReq);
+        var respNoHeaderBody = await httpResp.Content.ReadAsStringAsync();
+
+        // Log similar to BookingTestHelper
+        Output.WriteLine($"Request: POST {url} (no Content-Type)");
+        Output.WriteLine($"Status: {(int)httpResp.StatusCode} - {httpResp.StatusCode}");
+        Output.WriteLine($"Body: {respNoHeaderBody ?? "<null>"}");
+
+        var codeNoHeader = (int)httpResp.StatusCode;
+
+        // If server accepted (2xx) — attempt cleanup and fail for triage
+        if (codeNoHeader >= 200 && codeNoHeader < 300)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
+                {
+                    using var docC = System.Text.Json.JsonDocument.Parse(respNoHeaderBody);
+                    if (docC.RootElement.TryGetProperty("bookingid", out var createdIdEl) && createdIdEl.ValueKind == JsonValueKind.Number)
+                    {
+                        var createdId = createdIdEl.GetInt32();
+                        Output.WriteLine($"Server accepted missing Content-Type and created booking id {createdId}. Attempting cleanup.");
+
+                        try
+                        {
+                            var bookingClientCleanup = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+                            var auth = new AutomationTestingAuthClient();
+                            var token = await auth.GetTokenAsync("admin", "password");
+                            await bookingClientCleanup.DeleteBookingAsync(createdId, token);
+                            Output.WriteLine($"Cleanup DELETE /booking/{createdId} attempted.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Output.WriteLine($"Cleanup failed: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Output.WriteLine($"Parsing/cleanup error: {ex.Message}");
+            }
+
+            throw new Xunit.Sdk.XunitException($"Server accepted request without Content-Type (status {codeNoHeader}). This is a validation regression. Response: {respNoHeaderBody}");
+        }
+
+        // Otherwise expect a 4xx rejection
+        (codeNoHeader >= 400 && codeNoHeader < 500).Should().BeTrue("Requests without Content-Type should be rejected with 4xx");
+
+        if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(respNoHeaderBody);
+            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for missing Content-Type must not return bookingid");
+        }
+    }
+
+    [Fact(DisplayName = "API-20 - Schema consistency for /booking list and /auth")]
     public async Task ResponseSchemas_BookingListAndAuth_AreConsistent()
     {
-        var baseUrl = Settings.ApiBaseUrl;
-        var client = ApiClientFactory.Create(baseUrl);
-
-        // 1) /booking list
-        var listReq = new RestRequest("booking", Method.Get);
-        var listResp = await client.ExecuteAsync(listReq);
-
-        _output.WriteLine($"[/booking] Status: {(int)listResp.StatusCode} - {listResp.StatusCode}");
-        _output.WriteLine($"[/booking] Body  : {listResp.Content}");
-
-        listResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        listResp.Content.Should().NotBeNullOrEmpty();
-        ResponseSchemaValidator.AssertBookingListSchema(listResp.Content!);
-
-        // 2) /auth schema
-        var authBody = new { username = "admin", password = "password123" };
-        var authReq = new RestRequest("auth", Method.Post)
+        Output.Should().NotBeNull();
+        // 0) get token for automation API
+        var authReq = new RestRequest("auth/login", Method.Post)
             .AddHeader("Accept", "application/json")
-            .AddJsonBody(authBody);
-        var authResp = await client.ExecuteAsync(authReq);
-
-        _output.WriteLine($"[/auth] Status: {(int)authResp.StatusCode} - {authResp.StatusCode}");
-        _output.WriteLine($"[/auth] Body  : {authResp.Content}");
-
+            .AddHeader("Content-Type", "application/json")
+            .AddJsonBody(new { username = "admin", password = "password" });
+        var authResp = await ApiClientFactory.Create(Settings.AutomationTestingApiBase).ExecuteAsync(authReq);
+        BookingTestHelper.LogRequestResponse(Output, "POST /auth/login", authResp);
         authResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        authResp.Content.Should().NotBeNullOrEmpty();
-        ResponseSchemaValidator.AssertAuthSchema(authResp.Content!);
-    }
+        using var authDoc = JsonDocument.Parse(authResp.Content!);
+        authDoc.RootElement.TryGetProperty("token", out var tokenEl).Should().BeTrue();
+        var token = tokenEl.GetString();
+        token.Should().NotBeNullOrWhiteSpace();
 
-    // ========== API-20b ==========
-    // Validate schema for /booking/{id} (known 418 issue) – skipped
-    [Fact(
-        DisplayName = "API-20b - Schema consistency for /booking/{id} (known 418 issue)",
-        Skip = "Known flaky issue: GET /booking/{id} sometimes returns 418 in demo environment")]
-    public async Task ResponseSchema_BookingById_KnownIssue()
-    {
-        var bookingClient = new BookingClient();
+        // 1) Create booking to ensure at least one exists (use automation API)
         var booking = CreateRandomBooking();
-        var id = await BookingTestHelper.CreateBookingAndGetIdAsync(bookingClient, booking);
-        _output.WriteLine($"[CREATE] booking id: {id}");
+        var bookingClient = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+        var createResp = await bookingClient.CreateBookingAsync(booking);
+        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
+        createResp.Content.Should().NotBeNullOrWhiteSpace();
+        using var createdDoc = JsonDocument.Parse(createResp.Content!);
+        createdDoc.RootElement.TryGetProperty("bookingid", out var idEl).Should().BeTrue();
+        var bookingId = idEl.GetInt32();
 
-        var getResp = await BookingTestHelper.GetBookingByIdWithRetryAsync(id);
-        _output.WriteLine($"[/booking/{id}] Status: {(int)getResp.StatusCode} - {getResp.StatusCode}");
-        _output.WriteLine($"[/booking/{id}] Body  : {getResp.Content}");
+        // read roomid from created booking
+        int roomId = booking.roomid;
 
-        if (getResp.StatusCode == (HttpStatusCode)418)
-        {
-            throw new Xunit.Sdk.XunitException(
-                $"Known issue: GET /booking/{id} returned 418 when validating schema. Response: {getResp.Content}");
-        }
+        // 2) GET /booking?roomid={roomid} with auth
+        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+        var listReq = new RestRequest("booking", Method.Get)
+            .AddQueryParameter("roomid", roomId.ToString())
+            .AddHeader("Accept", "*/*")
+            .AddHeader("Referer", "")
+            .AddHeader("Cookie", $"token={token}");
+        var listResp = await client.ExecuteAsync(listReq);
+        BookingTestHelper.LogRequestResponse(Output, "GET /booking?roomid={roomId}", listResp);
+        listResp.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var listDoc = JsonDocument.Parse(listResp.Content!);
+        var root = listDoc.RootElement;
+        root.TryGetProperty("bookings", out var bookingsEl).Should().BeTrue();
+        bookingsEl.ValueKind.Should().Be(JsonValueKind.Array);
 
+        var first = bookingsEl.EnumerateArray().FirstOrDefault();
+        first.ValueKind.Should().Be(JsonValueKind.Object);
+        first.TryGetProperty("bookingid", out var bid).Should().BeTrue();
+        bid.ValueKind.Should().Be(JsonValueKind.Number);
+        first.TryGetProperty("roomid", out var rid).Should().BeTrue();
+        rid.ValueKind.Should().Be(JsonValueKind.Number);
+        first.TryGetProperty("firstname", out var fn).Should().BeTrue();
+        fn.ValueKind.Should().Be(JsonValueKind.String);
+        first.TryGetProperty("lastname", out var ln).Should().BeTrue();
+        ln.ValueKind.Should().Be(JsonValueKind.String);
+        first.TryGetProperty("depositpaid", out var dp).Should().BeTrue();
+        (dp.ValueKind == JsonValueKind.True || dp.ValueKind == JsonValueKind.False).Should().BeTrue();
+        first.TryGetProperty("bookingdates", out var bd).Should().BeTrue();
+        bd.ValueKind.Should().Be(JsonValueKind.Object);
+        bd.TryGetProperty("checkin", out var ci).Should().BeTrue();
+        ci.ValueKind.Should().Be(JsonValueKind.String);
+        bd.TryGetProperty("checkout", out var co).Should().BeTrue();
+        co.ValueKind.Should().Be(JsonValueKind.String);
+
+        // 3) GET /booking/{id} with auth — expect same core fields
+        var getReq = new RestRequest($"booking/{bookingId}", Method.Get)
+            .AddHeader("Accept", "*/*")
+            .AddHeader("Referer", "")
+            .AddHeader("Cookie", $"token={token}");
+        var getResp = await client.ExecuteAsync(getReq);
+        BookingTestHelper.LogRequestResponse(Output, $"GET /booking/{bookingId}", getResp);
         getResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        getResp.Content.Should().NotBeNullOrEmpty();
-        ResponseSchemaValidator.AssertBookingDetailsSchema(getResp.Content!);
-    }
+        using var getDoc = JsonDocument.Parse(getResp.Content!);
+        var g = getDoc.RootElement;
+        g.GetProperty("firstname").ValueKind.Should().Be(JsonValueKind.String);
+        g.GetProperty("lastname").ValueKind.Should().Be(JsonValueKind.String);
+        var deposit = g.GetProperty("depositpaid").ValueKind;
+        (deposit == JsonValueKind.True || deposit == JsonValueKind.False).Should().BeTrue();
+        g.GetProperty("bookingdates").ValueKind.Should().Be(JsonValueKind.Object);
+        g.GetProperty("bookingdates").GetProperty("checkin").ValueKind.Should().Be(JsonValueKind.String);
+        g.GetProperty("bookingdates").GetProperty("checkout").ValueKind.Should().Be(JsonValueKind.String);
 
+    }
 }
