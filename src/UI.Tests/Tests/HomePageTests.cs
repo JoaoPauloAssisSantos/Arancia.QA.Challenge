@@ -347,7 +347,7 @@ public class HomePageTests : IClassFixture<WebDriverFixture>
         // Teardown: remove the API-created booking
         try { await bookingClient.DeleteBookingAsync(apiBookingId, adminToken); } catch { /* ignore */ }
     }
-    [Theory(DisplayName = "UI-14 - Lastname accepts injection-like strings as plain text without breaking UI")]
+    [Theory(DisplayName = "UI-09 - Lastname accepts injection-like strings as plain text without breaking UI")]
     [InlineData("scriptPayload", "<script>alert(1)</script>")]
     [InlineData("imgPayload", "\"><img src=x onerror=alert(1)>")]
     public void BookingForm_LastName_InjectionLikeInput_TreatedAsPlainText(string caseId, string payload)

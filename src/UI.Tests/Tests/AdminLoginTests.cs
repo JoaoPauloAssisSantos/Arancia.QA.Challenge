@@ -21,7 +21,7 @@ public class AdminLoginTests : IClassFixture<WebDriverFixture>
         _login = new AdminAuthPage(_fix.Driver, "https://automationintesting.online");
     }
 
-    [Fact(DisplayName = "UI-11 - Admin login with valid credentials")]
+    [Fact(DisplayName = "UI-06 - Admin login with valid credentials")]
     public void AdminLogin_WithValidCredentials_ShowsAdminDashboard()
     {
         // Arrange
@@ -61,7 +61,7 @@ public class AdminLoginTests : IClassFixture<WebDriverFixture>
         reportMenu.Should().NotBeNull("Report menu should be visible after successful admin login");
     }
 
-    [Fact(DisplayName = "UI-12 - Admin login with invalid credentials shows error")]
+    [Fact(DisplayName = "UI-07 - Admin login with invalid credentials shows error")]
     public void AdminLogin_WithInvalidCredentials_ShowsErrorAndStaysOnLogin()
     {
         // Arrange
@@ -121,7 +121,7 @@ public class AdminLoginTests : IClassFixture<WebDriverFixture>
         reportMenus.Any(e => e.Displayed).Should().BeFalse("Report menu should not be visible after invalid login");
     }
 
-    [Fact(DisplayName = "UI-13 - Logout invalidates admin session")]
+    [Fact(DisplayName = "UI-08 - Logout invalidates admin session")]
     public void AdminLogout_InvalidatesSession_AndBlocksProtectedUrl()
     {
         var wait = new WebDriverWait(_fix.Driver, TimeSpan.FromSeconds(10));
@@ -178,7 +178,7 @@ public class AdminLoginTests : IClassFixture<WebDriverFixture>
         reportMenus.Any(e => e.Displayed).Should().BeFalse("Report menu should not be visible after logout");
     }
 
-    [Fact(DisplayName = "UI-20 - Unauthorized actions from UI are blocked")]
+    [Fact(DisplayName = "UI-10 - Unauthorized actions from UI are blocked")]
     public void UnauthorizedUser_CannotAccessAdminRoomsOrPerformDestructiveActions()
     {
         var protectedUrl = $"{_baseUrl}/admin/rooms";
