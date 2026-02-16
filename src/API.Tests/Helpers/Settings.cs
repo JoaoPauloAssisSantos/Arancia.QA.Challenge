@@ -1,4 +1,4 @@
-using System;
+namespace Arancia.Test.API.Helpers;
 
 public static class Settings
 {

@@ -1,3 +1,5 @@
+using Arancia.Test.API.Clients;
+using Arancia.Test.API.Helpers;
 using FluentAssertions;
 using Xunit.Abstractions;
 public class BookingTests : TestBase

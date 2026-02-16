@@ -1,5 +1,7 @@
+using Arancia.Test.API.Helpers;
 using RestSharp;
 using System.Text.Json;
+namespace Arancia.Test.API.Clients;
 
 public class BookingClient
 {
