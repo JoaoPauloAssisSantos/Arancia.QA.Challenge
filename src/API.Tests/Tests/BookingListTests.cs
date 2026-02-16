@@ -1,4 +1,5 @@
 ﻿using Arancia.Test.API.Clients;
+using Arancia.Test.API.Helpers;
 using FluentAssertions;
 using RestSharp;
 using System.Net;

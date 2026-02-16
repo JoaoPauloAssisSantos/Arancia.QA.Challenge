@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Text.Json;
+using Arancia.Test.API.Helpers;
 using RestSharp;
 namespace Arancia.Test.API.Clients;
 

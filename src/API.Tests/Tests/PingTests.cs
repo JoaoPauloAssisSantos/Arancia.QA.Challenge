@@ -1,6 +1,7 @@
 using Xunit;
 using FluentAssertions;
 using RestSharp;
+using Arancia.Test.API.Helpers;
 public class PingTests
 {
     [Fact(DisplayName = "API-01 - Health Check (Ping)")]

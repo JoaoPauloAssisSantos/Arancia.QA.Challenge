@@ -1,6 +1,7 @@
 using Arancia.Test.API.Clients;
 using Bogus;
 using Xunit.Abstractions;
+namespace Arancia.Test.API.Helpers;
 
 public abstract class TestBase
 {
