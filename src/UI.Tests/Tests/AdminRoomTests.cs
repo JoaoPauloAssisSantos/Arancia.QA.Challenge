@@ -28,7 +28,7 @@ public class AdminRoomsTests : IClassFixture<WebDriverFixture>
         _adminRooms = new AdminRoomsPage(_fix.Driver, baseUrl);
     }
 
-    [Fact(DisplayName = "UI-XX - Admin can create room and it appears in UI and API")]
+    [Fact(DisplayName = "UI-12 - Admin can create room and it appears in UI and API")]
     public async Task Admin_CreateRoom_ShowsInUiAndApi()
     {
         var wait = new WebDriverWait(_fix.Driver, TimeSpan.FromSeconds(10));

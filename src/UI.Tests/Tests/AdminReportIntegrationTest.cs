@@ -24,7 +24,7 @@ public class AdminReportIntegrationTests : IClassFixture<WebDriverFixture>
         _adminReport = new AdminReportPage(_fix.Driver, _baseUrl);
     }
 
-    [Fact(DisplayName = "INT-21 - Booking created via API is visible in Admin Report UI")]
+    [Fact(DisplayName = "UI-11 - Booking created via API is visible in Admin Report UI")]
     public async Task BookingCreatedViaApi_IsVisible_InAdminReport()
     {
         // ARRANGE – create booking via API
