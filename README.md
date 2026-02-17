@@ -106,7 +106,10 @@ Secrets (if any) should be stored in GitHub Secrets — do not hardcode tokens.
 ⚠ Known failing tests / environment caveats
 Some tests document known issues in the demo environment (see docs/BugReports.md), e.g.:
 
-BUG-004 — rooms created in Admin not immediately visible on public homepage.
+BUG-001 — rooms created in Admin not immediately visible on public homepage.
+BUG-002: Booking conflict and invalid date range crash the SPA instead of showing a friendly error.
+BUG-003: Content-Type enforcement for POST /booking is too permissive.
+BUG-004: Update Room without valid Auth returns 500 with generic “unexpected error”
 Certain endpoints may return 500 after delete (server-side bug); tests use fallbacks to confirm deletion.
 To exclude known-bug tests in a run, use trait filtering:
 
