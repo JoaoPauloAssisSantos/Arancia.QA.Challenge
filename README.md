@@ -36,8 +36,7 @@ docs/
   └─ BugReports.md
 src/
   ├─ API.Tests/           # RestSharp + xUnit API tests
-  ├─ UI.Tests/            # Selenium + POM UI tests
-  └─ Framework/           # shared clients, POM, helpers
+  └─ UI.Tests/            # Selenium + POM UI tests
 README.md
 ```
 
