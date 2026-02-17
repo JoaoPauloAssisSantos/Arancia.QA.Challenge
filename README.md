@@ -29,7 +29,7 @@ Environment recommendations:
 
 ## 📁 Repo Layout
 ```text
-.github/workflows/        # CI (GitHub Actions)
+workflows/        # CI (GitHub Actions)
 docs/
   ├─ TestStrategy.md
   ├─ ManualTests.md
