@@ -27,4 +27,26 @@ public class RestfulBookerAuthClient : IAuthClient
 
         return tokenEl.GetString()!;
     }
+    public async Task DestroyTokenAsync(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            throw new ArgumentException("Token must be non-empty.", nameof(token));
+
+        // Endpoint: POST /api/auth/logout
+        var req = new RestRequest("auth/logout", Method.Post)
+            .AddHeader("Accept", "*/*")
+            .AddHeader("Content-Type", "application/json")
+            .AddJsonBody(new { token });
+
+        var resp = await _client.ExecuteAsync(req);
+
+        // Accept common success statuses (tune based on your API’s behavior)
+        if (resp.StatusCode is HttpStatusCode.OK or HttpStatusCode.NoContent)
+            return;
+
+        // If the API returns something else but you still consider logout “best-effort”,
+        // you might log and return instead of throwing. For now, be strict:
+        throw new HttpRequestException(
+            $"DestroyTokenAsync failed on AutomationTestingAuthClient. Status: {(int)resp.StatusCode}. Body: {resp.Content}");
+    }
 }

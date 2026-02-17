@@ -10,68 +10,73 @@ public class AdvancedBookingTests : TestBase
 {
     public AdvancedBookingTests(ITestOutputHelper output) => InitTestBase(output);
 
-    [Fact(DisplayName = "API-17 - Create booking with very large string fields")]
-    public async Task CreateBooking_WithVeryLargeStrings_IsHandledGracefully()
+    [Theory(DisplayName = "API-17 - Create booking with invalid/missing Content-Type")]
+    [InlineData("text/plain")]       // case -> use RestSharp with wrong content-type
+    [InlineData(null)]               // case -> use HttpClient and remove Content-Type header
+    public async Task CreateBooking_InvalidOrMissingContentType_IsRejected(string? contentType)
     {
         // Preconditions
         Output.Should().NotBeNull();
+
         // Arrange - normal booking payload
         var booking = CreateRandomBooking();
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            booking,
-            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+        var json = JsonSerializer.Serialize(booking, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
-
-        // Test 1: Content-Type: text/plain
-        var reqText = new RestRequest("booking", Method.Post)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "text/plain")
-            .AddStringBody(json, "text/plain");
-
-        var respText = await client.ExecuteAsync(reqText);
-        BookingTestHelper.LogRequestResponse(Output, "POST /booking (Content-Type: text/plain)", respText);
-
-        var codeText = (int)respText.StatusCode;
-        if (codeText >= 200 && codeText < 300)
-            throw new Xunit.Sdk.XunitException($"Server accepted wrong Content-Type 'text/plain'. Status: {codeText}. Body: {respText.Content}");
-
-        (codeText >= 400 && codeText < 500).Should().BeTrue("Requests with wrong Content-Type should be rejected with 4xx");
-
-        if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
+        if (contentType != null)
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(respText.Content);
-            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for wrong Content-Type must not return bookingid");
+            // Test case: wrong Content-Type (text/plain) via RestSharp
+            var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
+
+            var req = new RestRequest("booking", Method.Post)
+                .AddHeader("Accept", "application/json")
+                .AddHeader("Content-Type", contentType)
+                .AddStringBody(json, contentType);
+
+            var resp = await client.ExecuteAsync(req);
+            BookingTestHelper.LogRequestResponse(Output, $"POST /booking (Content-Type: {contentType})", resp);
+
+            var status = (int)resp.StatusCode;
+            if (status >= 200 && status < 300)
+                throw new Xunit.Sdk.XunitException($"Server accepted wrong Content-Type '{contentType}'. Status: {status}. Body: {resp.Content}");
+
+            (status >= 400 && status < 500).Should().BeTrue("Requests with wrong Content-Type should be rejected with 4xx");
+
+            if (!string.IsNullOrWhiteSpace(resp.Content) && resp.Content.TrimStart().StartsWith("{"))
+            {
+                using var doc = JsonDocument.Parse(resp.Content);
+                doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for wrong Content-Type must not return bookingid");
+            }
         }
-
-        // Test 2: Missing Content-Type header — use HttpClient to send body with no Content-Type
-        using var httpClient = new System.Net.Http.HttpClient();
-        var url = $"{Settings.AutomationTestingApiBase.TrimEnd('/')}/booking";
-        var httpReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url)
+        else
         {
-            Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8)
-        };
-        // remove Content-Type header to simulate missing header
-        httpReq.Content.Headers.Remove("Content-Type");
+            // Test case: missing Content-Type — use HttpClient and remove header
+            using var httpClient = new HttpClient();
+            var url = $"{Settings.AutomationTestingApiBase.TrimEnd('/')}/booking";
+            var httpReq = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8)
+            };
+            // Remove Content-Type header to simulate missing header
+            httpReq.Content.Headers.Remove("Content-Type");
 
-        var httpResp = await httpClient.SendAsync(httpReq);
-        var respNoHeaderBody = await httpResp.Content.ReadAsStringAsync();
+            var httpResp = await httpClient.SendAsync(httpReq);
+            var respBody = await httpResp.Content.ReadAsStringAsync();
 
-        // Log similar to BookingTestHelper
-        Output.WriteLine($"Request: POST {url} (no Content-Type)");
-        Output.WriteLine($"Status: {(int)httpResp.StatusCode} - {httpResp.StatusCode}");
-        Output.WriteLine($"Body: {respNoHeaderBody ?? "<null>"}");
+            Output.WriteLine($"Request: POST {url} (no Content-Type)");
+            Output.WriteLine($"Status: {(int)httpResp.StatusCode} - {httpResp.StatusCode}");
+            Output.WriteLine($"Body: {respBody ?? "<null>"}");
 
-        var codeNoHeader = (int)httpResp.StatusCode;
-        if (codeNoHeader >= 200 && codeNoHeader < 300)
-            throw new Xunit.Sdk.XunitException($"Server accepted request without Content-Type. Status: {codeNoHeader}. Body: {respNoHeaderBody}");
+            var status = (int)httpResp.StatusCode;
+            if (status >= 200 && status < 300)
+                throw new Xunit.Sdk.XunitException($"Server accepted request without Content-Type. Status: {status}. Body: {respBody}");
 
-        (codeNoHeader >= 400 && codeNoHeader < 500).Should().BeTrue("Requests without Content-Type should be rejected with 4xx");
+            (status >= 400 && status < 500).Should().BeTrue("Requests without Content-Type should be rejected with 4xx");
 
-        if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(respNoHeaderBody);
-            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for missing Content-Type must not return bookingid");
+            if (!string.IsNullOrWhiteSpace(respBody) && respBody.TrimStart().StartsWith("{"))
+            {
+                using var doc = JsonDocument.Parse(respBody);
+                doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for missing Content-Type must not return bookingid");
+            }
         }
     }
 
@@ -133,138 +138,146 @@ public class AdvancedBookingTests : TestBase
         }
     }
 
-    [Fact(DisplayName = "API-19 - Reject POST /booking with wrong Content-Type")]
-    public async Task CreateBooking_WithWrongContentType_IsRejected()
+    [Theory(DisplayName = "API-19 - Reject POST /booking with wrong or missing Content-Type")]
+    [InlineData("text/plain")]      // use RestSharp with wrong Content-Type
+    [InlineData("__no-header__")]   // use HttpClient and remove Content-Type header
+    public async Task CreateBooking_WrongOrMissingContentType_IsRejected(string scenario)
     {
         // Preconditions
         Output.Should().NotBeNull();
+
         // Arrange - normal booking payload
         var booking = CreateRandomBooking();
-        var json = System.Text.Json.JsonSerializer.Serialize(
+        var json = JsonSerializer.Serialize(
             booking,
-            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-        var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
-
-        // Test 1: Content-Type: text/plain
-        var reqText = new RestRequest("booking", Method.Post)
-            .AddHeader("Accept", "application/json")
-            .AddHeader("Content-Type", "text/plain")
-            .AddStringBody(json, "text/plain");
-
-        var respText = await client.ExecuteAsync(reqText);
-        BookingTestHelper.LogRequestResponse(Output, "POST /booking (Content-Type: text/plain)", respText);
-
-        var codeText = (int)respText.StatusCode;
-
-        // If server accepted (2xx) — attempt cleanup and fail for triage
-        if (codeText >= 200 && codeText < 300)
+        if (scenario != "__no-header__")
         {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
-                {
-                    using var docC = System.Text.Json.JsonDocument.Parse(respText.Content);
-                    if (docC.RootElement.TryGetProperty("bookingid", out var createdIdEl) && createdIdEl.ValueKind == JsonValueKind.Number)
-                    {
-                        var createdId = createdIdEl.GetInt32();
-                        Output.WriteLine($"Server accepted wrong Content-Type and created booking id {createdId}. Attempting cleanup.");
+            // Test 1: wrong Content-Type via RestSharp
+            var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
 
-                        try
+            var reqText = new RestRequest("booking", Method.Post)
+                .AddHeader("Accept", "application/json")
+                .AddHeader("Content-Type", scenario)
+                .AddStringBody(json, scenario);
+
+            var respText = await client.ExecuteAsync(reqText);
+            BookingTestHelper.LogRequestResponse(Output, $"POST /booking (Content-Type: {scenario})", respText);
+
+            var codeText = (int)respText.StatusCode;
+
+            // If server accepted (2xx) — attempt cleanup and fail for triage
+            if (codeText >= 200 && codeText < 300)
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
+                    {
+                        using var docC = JsonDocument.Parse(respText.Content);
+                        if (docC.RootElement.TryGetProperty("bookingid", out var createdIdEl) && createdIdEl.ValueKind == JsonValueKind.Number)
                         {
-                            var bookingClientCleanup = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
-                            var auth = new AutomationTestingAuthClient();
-                            var token = await auth.GetTokenAsync("admin", "password");
-                            await bookingClientCleanup.DeleteBookingAsync(createdId, token);
-                            Output.WriteLine($"Cleanup DELETE /booking/{createdId} attempted.");
-                        }
-                        catch (Exception ex)
-                        {
-                            Output.WriteLine($"Cleanup failed: {ex.Message}");
+                            var createdId = createdIdEl.GetInt32();
+                            Output.WriteLine($"Server accepted wrong Content-Type and created booking id {createdId}. Attempting cleanup.");
+
+                            try
+                            {
+                                var bookingClientCleanup = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+                                var auth = new AutomationTestingAuthClient();
+                                var token = await auth.GetTokenAsync("admin", "password");
+                                await bookingClientCleanup.DeleteBookingAsync(createdId, token);
+                                Output.WriteLine($"Cleanup DELETE /booking/{createdId} attempted.");
+                            }
+                            catch (Exception ex)
+                            {
+                                Output.WriteLine($"Cleanup failed: {ex.Message}");
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Output.WriteLine($"Parsing/cleanup error: {ex.Message}");
-            }
-
-            throw new Xunit.Sdk.XunitException($"Server accepted wrong Content-Type 'text/plain' (status {codeText}). This is a validation regression. Response: {respText.Content}");
-        }
-
-        // Otherwise expect a 4xx rejection
-        (codeText >= 400 && codeText < 500).Should().BeTrue("Requests with wrong Content-Type should be rejected with 4xx");
-
-        if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(respText.Content);
-            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for wrong Content-Type must not return bookingid");
-        }
-
-        // Test 2: Missing Content-Type header — use HttpClient to send body with no Content-Type
-        using var httpClient = new System.Net.Http.HttpClient();
-        var url = $"{Settings.AutomationTestingApiBase.TrimEnd('/')}/booking";
-        var httpReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url)
-        {
-            Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8)
-        };
-        // remove Content-Type header to simulate missing header
-        httpReq.Content.Headers.Remove("Content-Type");
-
-        var httpResp = await httpClient.SendAsync(httpReq);
-        var respNoHeaderBody = await httpResp.Content.ReadAsStringAsync();
-
-        // Log similar to BookingTestHelper
-        Output.WriteLine($"Request: POST {url} (no Content-Type)");
-        Output.WriteLine($"Status: {(int)httpResp.StatusCode} - {httpResp.StatusCode}");
-        Output.WriteLine($"Body: {respNoHeaderBody ?? "<null>"}");
-
-        var codeNoHeader = (int)httpResp.StatusCode;
-
-        // If server accepted (2xx) — attempt cleanup and fail for triage
-        if (codeNoHeader >= 200 && codeNoHeader < 300)
-        {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
+                catch (Exception ex)
                 {
-                    using var docC = System.Text.Json.JsonDocument.Parse(respNoHeaderBody);
-                    if (docC.RootElement.TryGetProperty("bookingid", out var createdIdEl) && createdIdEl.ValueKind == JsonValueKind.Number)
-                    {
-                        var createdId = createdIdEl.GetInt32();
-                        Output.WriteLine($"Server accepted missing Content-Type and created booking id {createdId}. Attempting cleanup.");
+                    Output.WriteLine($"Parsing/cleanup error: {ex.Message}");
+                }
 
-                        try
+                throw new Xunit.Sdk.XunitException($"Server accepted wrong Content-Type '{scenario}' (status {codeText}). This is a validation regression. Response: {respText.Content}");
+            }
+
+            // Otherwise expect a 4xx rejection
+            (codeText >= 400 && codeText < 500).Should().BeTrue("Requests with wrong Content-Type should be rejected with 4xx");
+
+            if (!string.IsNullOrWhiteSpace(respText.Content) && respText.Content.TrimStart().StartsWith("{"))
+            {
+                using var doc = JsonDocument.Parse(respText.Content);
+                doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for wrong Content-Type must not return bookingid");
+            }
+        }
+        else
+        {
+            // Test 2: Missing Content-Type header — use HttpClient to send body with no Content-Type
+            using var httpClient = new HttpClient();
+            var url = $"{Settings.AutomationTestingApiBase.TrimEnd('/')}/booking";
+            var httpReq = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8)
+            };
+            // remove Content-Type header to simulate missing header
+            httpReq.Content.Headers.Remove("Content-Type");
+
+            var httpResp = await httpClient.SendAsync(httpReq);
+            var respNoHeaderBody = await httpResp.Content.ReadAsStringAsync();
+
+            // Log similar to BookingTestHelper
+            Output.WriteLine($"Request: POST {url} (no Content-Type)");
+            Output.WriteLine($"Status: {(int)httpResp.StatusCode} - {httpResp.StatusCode}");
+            Output.WriteLine($"Body: {respNoHeaderBody ?? "<null>"}");
+
+            var codeNoHeader = (int)httpResp.StatusCode;
+
+            // If server accepted (2xx) — attempt cleanup and fail for triage
+            if (codeNoHeader >= 200 && codeNoHeader < 300)
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
+                    {
+                        using var docC = JsonDocument.Parse(respNoHeaderBody);
+                        if (docC.RootElement.TryGetProperty("bookingid", out var createdIdEl) && createdIdEl.ValueKind == JsonValueKind.Number)
                         {
-                            var bookingClientCleanup = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
-                            var auth = new AutomationTestingAuthClient();
-                            var token = await auth.GetTokenAsync("admin", "password");
-                            await bookingClientCleanup.DeleteBookingAsync(createdId, token);
-                            Output.WriteLine($"Cleanup DELETE /booking/{createdId} attempted.");
-                        }
-                        catch (Exception ex)
-                        {
-                            Output.WriteLine($"Cleanup failed: {ex.Message}");
+                            var createdId = createdIdEl.GetInt32();
+                            Output.WriteLine($"Server accepted missing Content-Type and created booking id {createdId}. Attempting cleanup.");
+
+                            try
+                            {
+                                var bookingClientCleanup = new BookingClient(ApiClientFactory.Create(Settings.AutomationTestingApiBase));
+                                var auth = new AutomationTestingAuthClient();
+                                var token = await auth.GetTokenAsync("admin", "password");
+                                await bookingClientCleanup.DeleteBookingAsync(createdId, token);
+                                Output.WriteLine($"Cleanup DELETE /booking/{createdId} attempted.");
+                            }
+                            catch (Exception ex)
+                            {
+                                Output.WriteLine($"Cleanup failed: {ex.Message}");
+                            }
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    Output.WriteLine($"Parsing/cleanup error: {ex.Message}");
+                }
+
+                throw new Xunit.Sdk.XunitException($"Server accepted request without Content-Type (status {codeNoHeader}). This is a validation regression. Response: {respNoHeaderBody}");
             }
-            catch (Exception ex)
+
+            // Otherwise expect a 4xx rejection
+            (codeNoHeader >= 400 && codeNoHeader < 500).Should().BeTrue("Requests without Content-Type should be rejected with 4xx");
+
+            if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
             {
-                Output.WriteLine($"Parsing/cleanup error: {ex.Message}");
+                using var doc = JsonDocument.Parse(respNoHeaderBody);
+                doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for missing Content-Type must not return bookingid");
             }
-
-            throw new Xunit.Sdk.XunitException($"Server accepted request without Content-Type (status {codeNoHeader}). This is a validation regression. Response: {respNoHeaderBody}");
-        }
-
-        // Otherwise expect a 4xx rejection
-        (codeNoHeader >= 400 && codeNoHeader < 500).Should().BeTrue("Requests without Content-Type should be rejected with 4xx");
-
-        if (!string.IsNullOrWhiteSpace(respNoHeaderBody) && respNoHeaderBody.TrimStart().StartsWith("{"))
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(respNoHeaderBody);
-            doc.RootElement.TryGetProperty("bookingid", out _).Should().BeFalse("response for missing Content-Type must not return bookingid");
         }
     }
 

@@ -1,0 +1,170 @@
+name: CI - API & UI Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    env:
+      # Base URLs (override here if environment changes)
+      API_BASE_URL: https://restful-booker.herokuapp.com
+      UI_BASE_URL: https://automationintesting.online
+
+      # UI config (used by WebDriverFactory/WebDriverFixture)
+      UI_BROWSER: chrome
+      UI_HEADLESS: true
+      UI_IMPLICIT_WAIT: 5
+
+    steps:
+      # -------------------------
+      # 1) Checkout
+      # -------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -------------------------
+      # 2) Setup .NET
+      # -------------------------
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+
+      # -------------------------
+      # 3) Restore
+      # -------------------------
+      - name: Restore dependencies
+        run: dotnet restore
+
+      # -------------------------
+      # 4) Build with warnings as errors (for test projects)
+      # -------------------------
+      - name: Build solution (treat warnings as errors for tests)
+        run: |
+          dotnet build src/API.Tests/API.Tests.csproj -c Release /warnaserror
+          dotnet build src/UI.Tests/UI.Tests.csproj -c Release /warnaserror
+
+      # -------------------------
+      # 5) API Health Check (API-01) - Hard Gate
+      # -------------------------
+      - name: Run Health Check (API-01 - /ping)
+        run: |
+          dotnet test src/API.Tests/API.Tests.csproj \
+            --no-build \
+            --filter "Name=HealthCheck_Ping_ReturnsExpectedStatus"
+        continue-on-error: false  # if health check fails, fail CI immediately
+
+      # -------------------------
+      # 6) UI Health Check (UI-01) - Hard Gate
+      # -------------------------
+      - name: Run UI Health Check (UI-01 - Homepage loads successfully)
+        run: |
+          dotnet test src/UI.Tests/UI.Tests.csproj \
+            --no-build \
+            --filter "Name=Homepage_LoadsSuccessfully"
+        continue-on-error: false  # if homepage does not load, fail CI immediately
+
+      # -------------------------
+      # 7) Run Full API Tests (soft gate - quality evaluation later)
+      # -------------------------
+      - name: Run API Tests
+        run: |
+          dotnet test src/API.Tests/API.Tests.csproj \
+            -c Release \
+            --no-build \
+            --logger "trx;LogFileName=api-tests.trx"
+        continue-on-error: true   # allow failures, to be evaluated by quality gate
+
+      # -------------------------
+      # 8) Run Full UI Tests (soft gate - quality evaluation later)
+      # -------------------------
+      - name: Run UI Tests (Headless)
+        run: |
+          dotnet test src/UI.Tests/UI.Tests.csproj \
+            -c Release \
+            --no-build \
+            --logger "trx;LogFileName=ui-tests.trx"
+        continue-on-error: true   # allow failures, to be evaluated by quality gate
+
+      # -------------------------
+      # 9) Publish Test Results (TRX)
+      # -------------------------
+      - name: Publish Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/TestResults/*.trx
+
+      # -------------------------
+      # 10) Evaluate Quality Gates (failure-rate <= 25%)
+      # -------------------------
+      - name: Evaluate Quality Gates (Failure rate <= 25%)
+        if: always()
+        run: |
+          python - << 'PY'
+          import glob, xml.etree.ElementTree as ET, sys, os
+
+          trx_files = glob.glob('**/TestResults/*.trx', recursive=True)
+          if not trx_files:
+              print("No TRX files found. Failing quality gate.")
+              sys.exit(1)
+
+          total = 0
+          failed = 0
+
+          # TRX namespace
+          NS = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+
+          for path in trx_files:
+              print(f"Processing TRX: {path}")
+              try:
+                  tree = ET.parse(path)
+                  root = tree.getroot()
+                  for result in root.findall('.//t:UnitTestResult', NS):
+                      outcome = result.attrib.get('outcome', '').lower()
+                      total += 1
+                      if outcome == 'failed':
+                          failed += 1
+              except Exception as e:
+                  print(f"Error parsing {path}: {e}")
+
+          print(f"Total tests (from TRX): {total}")
+          print(f"Failed tests: {failed}")
+
+          if total == 0:
+              print("No tests counted. Failing quality gate.")
+              sys.exit(1)
+
+          failure_rate = failed / total
+          print(f"Computed failure rate: {failure_rate:.2%}")
+
+          # Quality gate: fail only if more than 25% of tests failed
+          if failure_rate > 0.25:
+              print("Failure rate exceeds 25% - failing CI.")
+              sys.exit(1)
+          else:
+              print("Failure rate within acceptable limits - quality gate passed.")
+              sys.exit(0)
+          PY
+
+      # -------------------------
+      # 11) Publish UI Artifacts (screenshots, HTML, logs)
+      # -------------------------
+      - name: Publish UI Artifacts
+        if: failure()  # only upload if something went wrong (use always() if you prefer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-artifacts
+          path: |
+            **/*.png
+            **/*.html
+            **/*_console.log
+          if-no-files-found: ignore

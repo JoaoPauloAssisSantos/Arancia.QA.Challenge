@@ -27,4 +27,28 @@ public class AuthClient
 
         return tokenEl.GetString()!;
     }
+    /// <summary>
+    /// Destroys / invalidates an existing token.
+    /// Expected endpoint: POST /api/auth/logout with JSON body { "token": "abc123" }.
+    /// </summary>
+    public async Task DestroyTokenAsync(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            throw new ArgumentException("Token must be non-empty", nameof(token));
+
+        var req = new RestRequest("api/auth/logout", Method.Post)
+            .AddHeader("Accept", "*/*")
+            .AddHeader("Content-Type", "application/json")
+            .AddJsonBody(new { token });
+
+        var resp = await _client.ExecuteAsync(req);
+
+        // accept 200 OK, 204 NoContent (or whatever the API returns for successful logout)
+        if (resp.StatusCode is HttpStatusCode.OK or HttpStatusCode.NoContent)
+            return;
+
+        // if the API uses a different "success" code (e.g. 202), add it above
+        throw new HttpRequestException(
+            $"DestroyToken failed. Status: {(int)resp.StatusCode}. Body: {resp.Content}");
+    }
 }
