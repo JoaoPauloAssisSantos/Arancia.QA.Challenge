@@ -11,7 +11,7 @@ public class WebDriverFixture : IDisposable
         var browser = Environment.GetEnvironmentVariable("UI_BROWSER")?.ToLowerInvariant() == "firefox"
             ? BrowserType.Firefox
             : BrowserType.Chrome;
-        var headless = (Environment.GetEnvironmentVariable("UI_HEADLESS") ?? "true").ToLowerInvariant() == "true";
+        var headless = (Environment.GetEnvironmentVariable("UI_HEADLESS") ?? "false").ToLowerInvariant() == "true";
         var wait = int.TryParse(Environment.GetEnvironmentVariable("UI_IMPLICIT_WAIT"), out var w) ? w : 5;
 
         var options = new WebDriverOptions
