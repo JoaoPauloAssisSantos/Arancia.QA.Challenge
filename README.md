@@ -113,6 +113,17 @@ Restores dependencies
 Runs API tests
 Runs UI tests (headless)
 Uploads test results and artifacts
+
+CI / Test Execution
+
+Supported env vars:
+UI_BROWSER: chrome | firefox (default: chrome)
+UI_HEADLESS: true | false (default: true)
+UI_IMPLICIT_WAIT: integer seconds (default: 5)
+
+Quick examples:
+Headless Chrome (default): export UI_BROWSER=chrome export UI_HEADLESS=true dotnet test src/UI.Tests/UI.Tests.csproj
+Firefox non‑headless: export UI_BROWSER=firefox export UI_HEADLESS=false dotnet test src/UI.Tests/UI.Tests.csproj
 Notes:
 
 UI tests may require a self-hosted runner if the hosted runner cannot run Chrome properly. Check workflows/*.yml for specifics.

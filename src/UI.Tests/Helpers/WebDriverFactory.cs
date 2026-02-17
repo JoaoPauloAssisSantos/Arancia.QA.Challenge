@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Firefox;
@@ -30,7 +31,40 @@ namespace UI.Tests.Helpers
             };
 
             driver.Manage().Timeouts().ImplicitWait = TimeSpan.FromSeconds(options.ImplicitWaitSeconds);
-            driver.Manage().Window.Maximize();
+
+            // Set a consistent viewport when running headless; otherwise maximize.
+            try
+            {
+                if (options.Headless)
+                {
+                    try
+                    {
+                        // Preferred: use Selenium Size (requires System.Drawing)
+                        driver.Manage().Window.Size = new Size(1920, 1080);
+                    }
+                    catch (Exception)
+                    {
+                        // Fallback: resize via JS if platform or System.Drawing causes issues
+                        try
+                        {
+                            ((IJavaScriptExecutor)driver).ExecuteScript("window.resizeTo(1920,1080);");
+                        }
+                        catch
+                        {
+                            // ignore fallback failures
+                        }
+                    }
+                }
+                else
+                {
+                    driver.Manage().Window.Maximize();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WebDriverFactory] Warning setting window size/maximize: {ex.Message}");
+            }
+
             return driver;
         }
 
