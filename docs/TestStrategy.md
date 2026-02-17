@@ -106,12 +106,23 @@ The effort is distributed according to the Testing Pyramid:
 - **Documentation**: Markdown (`TestStrategy.md`, `ManualTests.md`, `BugReports.md`)
 
 ---
+## 6. Test Plan
 
-## 6. Test Scenarios & Coverage Matrix (Summary)
+- ID: TP-001
+- Objective: Validate core booking and admin flows (API + UI) and ensure no regressions across releases.
+- Entry criteria: /ping returns 201; test env reachable; admin credentials available.
+- Exit criteria: All P1 tests passed; no open P1 defects; regression suite executed.
+- Test types: API (automated), UI (automated + manual), Integration, Security smoke.
+- Environment: https://restful-booker.herokuapp.com (API), https://automationintesting.online (UI). DB resets every 10 min — tests must be atomic.
+- Schedule: Smoke (every run), Full regression (nightly CI), Manual exploratory (ad‑hoc during triage).
+- Roles: QA Engineer (test execution & automation), Dev (bug fixes), PO (acceptance).
+- Deliverables: Test results, Allure/JUnit reports, BugReports.md, Release sign-off.
+- Risks: env instability, flaky tests — mitigations: health-check, unique test data, retries where appropriate.
+## 7. Test Scenarios & Coverage Matrix (Summary)
 
 The table below summarizes the **key** automated and manual scenarios. Detailed steps and expected results are in [`ManualTests.md`](./ManualTests.md).
 
-### 6.1 API Scenarios (RESTful Booker)
+### 7.1 API Scenarios (RESTful Booker)
 
 | ID       | Component | Scenario Description                                               | Priority           | Automation |
 |---------:|-----------|--------------------------------------------------------------------|--------------------|-----------|
@@ -155,7 +166,7 @@ The table below summarizes the **key** automated and manual scenarios. Detailed 
 
 ---
 
-### 6.2 UI Scenarios (https://automationintesting.online)
+### 7.2 UI Scenarios (https://automationintesting.online)
 
 | ID      | Component | Scenario Description                                                      | Priority       | Automation |
 |:--------|:----------|:-------------------------------------------------------------------------|:--------------:|:----------:|
@@ -173,7 +184,7 @@ The table below summarizes the **key** automated and manual scenarios. Detailed 
 
 ---
 
-### 6.3 Integration Scenarios (API ↔ UI)
+### 7.3 Integration Scenarios (API ↔ UI)
 
 | ID      | Component     | Scenario Description                                                                 | Priority  | Automation |
 |:--------|:--------------|:--------------------------------------------------------------------------------------|:---------:|:----------:|
@@ -185,7 +196,7 @@ The table below summarizes the **key** automated and manual scenarios. Detailed 
 
 ---
 
-## 7. Summary
+## 8. Summary
 
 - **API tests** cover detailed validation of contracts, edge cases, and concurrency for both bookings and rooms.
 - **UI tests** validate the main user journeys (customer booking) and critical admin flows (rooms, report, security).

@@ -13,25 +13,48 @@ public class BookingListTests : TestBase
     [Fact(DisplayName = "API-05 - Retrieve list of existing bookings")]
     public async Task GetBookings_ShouldReturnListWithBookingId()
     {
-        // Arrange - create booking with specific roomid
+        // Preconditions
+        Output.Should().NotBeNull();
+
+        // ARRANGE – ensure at least one booking exists for roomid=1 (or another room)
         var booking = CreateRandomBooking();
         booking.roomid = 1;
+
         var bookingClient = new BookingClient();
         var createResp = await bookingClient.CreateBookingAsync(booking);
-        createResp.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
-        createResp.Content.Should().NotBeNullOrWhiteSpace();
+        BookingTestHelper.LogRequestResponse(Output, "POST /booking (precondition)", createResp);
 
-        using var createdDoc = JsonDocument.Parse(createResp.Content!);
-        createdDoc.RootElement.TryGetProperty("bookingid", out var createdIdEl).Should().BeTrue();
-        var createdId = createdIdEl.GetInt32();
-        Output.WriteLine($"Created booking id: {createdId}, roomid: {booking.roomid}");
+        var status = createResp.StatusCode;
+        var code = (int)status;
 
-        // Get token
+        if (status == HttpStatusCode.OK || status == HttpStatusCode.Created)
+        {
+            // happy path: we created a new booking
+            createResp.Content.Should().NotBeNullOrWhiteSpace();
+
+            using var createdDoc = JsonDocument.Parse(createResp.Content!);
+            createdDoc.RootElement.TryGetProperty("bookingid", out var createdIdEl).Should().BeTrue();
+            var createdId = createdIdEl.GetInt32();
+            Output.WriteLine($"[Precondition] Created booking id: {createdId}, roomid: {booking.roomid}");
+        }
+        else if (status == HttpStatusCode.Conflict)
+        {
+            // 409 Conflict: a booking already exists for these room/dates.
+            // For API-05 we only need "at least one booking exists", so this is acceptable.
+            Output.WriteLine($"[Precondition] Booking creation returned 409 Conflict (probably room/dates already booked). Body: {createResp.Content}");
+        }
+        else
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"[Precondition] Unexpected status {code} when creating booking for API-05. Response: {createResp.Content}");
+        }
+
+        // Get token for the filtered GET (if required by this endpoint)
         var auth = new AutomationTestingAuthClient();
         var token = await auth.GetTokenAsync("admin", "password");
         Output.WriteLine($"Token: {token}");
 
-        // Act - GET /booking?roomid={roomid}
+        // ACT – GET /booking?roomid={roomid}
         var client = ApiClientFactory.Create(Settings.AutomationTestingApiBase);
         var req = new RestRequest("booking", Method.Get)
             .AddQueryParameter("roomid", booking.roomid.ToString())
@@ -44,15 +67,15 @@ public class BookingListTests : TestBase
         // Log
         BookingTestHelper.LogRequestResponse(Output, $"GET /booking?roomid={booking.roomid}", resp);
 
-        // Assert
-        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        // ASSERT
+        resp.StatusCode.Should().Be(HttpStatusCode.OK, "GET /booking?roomid should return 200");
         resp.Content.Should().NotBeNullOrWhiteSpace();
 
         using var doc = JsonDocument.Parse(resp.Content!);
         var root = doc.RootElement;
 
-        // root should contain "bookings" array
-        root.TryGetProperty("bookings", out var bookingsEl).Should().BeTrue("'bookings' array expected in response");
+        root.TryGetProperty("bookings", out var bookingsEl)
+            .Should().BeTrue("'bookings' array expected in response");
         bookingsEl.ValueKind.Should().Be(JsonValueKind.Array);
 
         var matchFound = bookingsEl.EnumerateArray()

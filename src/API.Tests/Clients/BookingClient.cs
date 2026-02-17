@@ -38,11 +38,17 @@ public class BookingClient
         return resp;
     }
 
-    public async Task<RestResponse> GetBookingAsync(int id)
+    public async Task<RestResponse> GetBookingAsync(int id, string? token = null)
     {
-        var req = new RestRequest($"booking/{id}", Method.Get);
+        var req = new RestRequest($"booking/{id}", Method.Get)
+            .AddHeader("Accept", "application/json");
+
+        if (!string.IsNullOrWhiteSpace(token))
+            req.AddHeader("Cookie", $"token={token}");
+
         return await _client.ExecuteAsync(req);
     }
+
 
     public async Task<RestResponse> DeleteBookingAsync(int id, string token)
     {

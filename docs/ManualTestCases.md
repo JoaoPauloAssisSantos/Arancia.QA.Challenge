@@ -269,6 +269,191 @@ Base:
 
 ---
 
+### API-21 — Create a room with valid data
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-21                                                                                       |
+| Title          | Create a room with valid data                                                                                             |
+| Precondition   | get token /api/auth/login                                                                                                                        |
+| Steps          | 1. Send `POST /api/room/` with a fully valid JSON body (all required fields).                                                  |
+| Example body   | `{"roomName": "700","type": "Suite","accessible": true,"image": "https://blog.postman.com/wp-content/uploads/2014/07/logo.png","description": "This is room 101, dare you enter?","roomPrice": 100,"features": ["WiFi", "Safe"]}` |
+| Expected       | Status `200` and room created                            |
+| Severity       | Medium                                                                                           |
+
+---
+
+### API-22 — Create a room without valid data
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-22                                                                                     |
+| Title          | Create a room without valid data                                                                                             |
+| Precondition   | get token /api/auth/login                                                                                                                        |
+| Steps          | 1. Send `POST /api/room/` without valid JSON body.                                                  |
+| Example body   | `{"roomName": "","type": "","accessible": ,"image": "https://blog.postman.com/wp-content/uploads/2014/07/logo.png","description": "This is room 101, dare you enter?","roomPrice": 100,"features": ["WiFi", "Safe"]}` |
+| Expected       | Status 400/500.                           |
+| Severity       | High                                                                                           |
+
+---
+
+### API-23 — Create a room with valid data and Get Room
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-23                                                                                  |
+| Title          | Create a room with valid data and Get Room by ID                                                                                            |
+| Precondition   | get token /api/auth/login                                                                                                                        |
+| Steps          | 1. Send `POST /api/room/` with a fully valid JSON body (all required fields). 2. Send 'GET /api/room/{roomid}'                                       |
+| Expected       | Get response with created room information.                  |
+| Severity       | High                                                                                           |
+
+---
+
+### API-24 — Create Room Without valid Auth
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-24                                                                                  |
+| Title          | Create a room without valid Auth                                                                                            |
+| Precondition   | None                                                                                                                        |
+| Steps          | 1. Send `POST /api/room/` without valid Auth                                       |
+| Expected       | Status `403`/`401`. Room not created                 |
+| Severity       | High                                                                                           |
+
+---
+
+### API-25 — Get Room Without valid RoomId
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-25                                                                                 |
+| Title          | Get a room with valid Auth                                                                                            |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `GET /api/room/{roomid}`                                   |
+| Expected       | Status `400`. `{"timestamp": "2026-02-15T20:27:26.541+00:00","status": 400,"error": "Bad Request","path": "/room/9849494984"}`               |
+| Severity       | High                                                                                           |
+
+---
+
+### API-26 — Update Room with valid Auth
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-26                                                                                |
+| Title          | Update a room with valid Auth                                                                                            |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `PUT /api/room/{roomid}`                                   |
+| Expected       | Status `200`. A subsequent `GET /booking/{id}` returns the new values.                  |
+| Severity       | High                                                                                           |
+
+---
+
+### API-27 — Update Room without valid Auth
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-27                                                                               |
+| Title          | Update a room without valid Auth                                                                                            |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `PUT /api/room/{roomid}`                                   |
+| Expected       | Status `500`. Room does not updates  `{"errors": ["An unexpected error occurred"]} `            |
+| Severity       | High                                                                                           |
+
+---
+
+### API-28 — Update Room without valid data
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-28                                                                               |
+| Title          | Update a room without valid Data                                                                                            |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `PUT /api/room/{roomid}` 
+| Example body   | `{"roomName": "","type": "","accessible": 0 ,"image": "https://blog.postman.com/wp-content/uploads/2014/07/logo.png","description": "This is room 101, dare you enter?","roomPrice": 8000000,"features": ["WiFi", "Safe"]}`                                  |
+| Expected       | Status `400`. Room not updated . response with `"errors" : [{errors}]`              |
+| Severity       | High                                                                                           |
+
+---
+
+### API-29 — Delete Room with valid Auth
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-29                                                                              |
+| Title          | Delete a room with valid Auth                                                                                            |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `DELETE /api/room/{roomid}`                |
+| Expected       | Status `200`  and room deleted `GET /api/room/{DELETEDroomid}` does not return the room       |
+| Severity       | High                                                                                           |
+
+---
+
+### API-30 — Delete Room without valid Auth
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-30                                                                               |
+| Title          | Delete a room without valid Auth                                                                                            |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `DELETE /api/room/{roomid}`                |
+| Expected       | Status `400` room does not delete      |
+| Severity       | High                                                                                           |
+
+---
+
+### API-31 — Create room and create a booking
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-31                                                                               |
+| Title          | Booking for a created room                                                                                           |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `POST /api/booking`                |
+| Expected       | Status `200` booking created for the new room      |
+| Severity       | High                                                                                           |
+
+---
+
+### API-32 — Create room Update room and create a booking
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-32                                                                               |
+| Title          | Booking for a created and updated room                                                                                           |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `POST /api/booking`                |
+| Expected       | Status `200` booking created for the new room      |
+| Severity       | High                                                                                           |
+
+---
+
+### API-33 — Creating booking for room already booked on same dates returns 409
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-33                                                                               |
+| Title          | Booking for a created and updated room                                                                                           |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `POST /api/booking`                |
+| Expected       | Status `409` Conflict `{"error": "Failed to create booking"}`      |
+| Severity       | High                                                                                           |
+
+---
+
+### API-34 — Creating room and get rooms
+
+| Field           | Description                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------|
+| ID             | API-33                                                                               |
+| Title          | Creating room and get rooms                                                                                          |
+| Precondition   | Create a room `POST /api/room/`                                                                                                                     |
+| Steps          | 1. Send `POST /api/booking`  2. `GET /api/room/`              |
+| Expected       | Status `200` `{"rooms": [list of room with new room added]}`      |
+| Severity       | Medium                                                                                           |
+
+---
+
 ## 2. UI Test Cases (https://automationintesting.online)
 
 > Note: exact selectors/flows may change; adapt to actual DOM and behavior.
@@ -293,7 +478,7 @@ Base:
 | ID             | UI-02                                                                                               |
 | Title          | Create a booking using the UI with valid data                                                       |
 | Precondition   | Homepage loaded.                                                                                    |
-| Steps          | 1. Fill all required fields in the booking form (name, dates, price, deposit, etc.). <br> 2. Submit form. |
+| Steps          | 1. Fill all required fields in the booking form (firstname, lastname, email, phone). <br> 2. Submit form. |
 | Expected       | Success message displayed and/or booking appears in UI list. Data matches input.                    |
 | Severity       | High                                                                                                |
 
@@ -306,8 +491,8 @@ Base:
 | ID             | UI-03                                                                         |
 | Title          | Validate required fields cannot be left empty                                 |
 | Precondition   | Homepage loaded.                                                               |
-| Steps          | 1. Leave one or more mandatory fields empty. <br> 2. Click submit.            |
-| Expected       | Inline validation messages; booking is not created; no request with invalid data is sent (if possible to verify). |
+| Steps          | 1. Fill with wrong information required fields in the booking form (firstname, lastname, email, phone). <br> 2. Submit form. |
+| Expected       | Error message for each field.                    |
 | Severity       | High                                                                           |
 
 ---
@@ -325,89 +510,25 @@ Base:
 
 ---
 
-### UI-05 — Booking form — invalid price entry
+### UI-05 — Submit booking for a date and room that is already booked
 
 | Field           | Description                                                     |
 |----------------|-----------------------------------------------------------------|
 | ID             | UI-05                                                            |
-| Title          | Validate price field for non-numeric or negative values         |
+| Title          | Submit booking for a date and room that is already booked         |
 | Precondition   | Homepage loaded.                                                |
-| Steps          | 1. Input text or negative number into price field. <br> 2. Submit. |
+| Steps          | 1. Submit a booking for a room <br> 2. Submit a booking for the same room and date booked before. |
 | Expected       | Validation error displayed; booking not created.                 |
 | Severity       | Medium                                                          |
 
 ---
 
-### UI-06 — View bookings list (if available)
 
-| Field           | Description                                                |
-|----------------|------------------------------------------------------------|
-| ID             | UI-06                                                     |
-| Title          | Display list of existing bookings                          |
-| Precondition   | At least one booking exists (created via UI or API).       |
-| Steps          | 1. Navigate to bookings list section/page.                 |
-| Expected       | Existing bookings displayed with correct core information. |
-| Severity       | High                                                       |
-
----
-
-### UI-07 — Edit booking via UI (happy path)
-
-| Field           | Description                                                                  |
-|----------------|------------------------------------------------------------------------------|
-| ID             | UI-07                                                                       |
-| Title          | Edit an existing booking record through the UI                               |
-| Precondition   | At least one visible booking in the UI.                                      |
-| Steps          | 1. Click “Edit” for a booking. <br> 2. Change selected fields. <br> 3. Save. |
-| Expected       | Success message; updated data displayed.                                     |
-| Severity       | High                                                                         |
-
----
-
-### UI-08 — Edit booking without permission (if auth exists)
-
-| Field           | Description                                                           |
-|----------------|-----------------------------------------------------------------------|
-| ID             | UI-08                                                                 |
-| Title          | Prevent editing bookings without authentication/permissions           |
-| Precondition   | User not logged in / has no admin role (if role model exists).       |
-| Steps          | 1. Attempt to access edit controls or edit page.                      |
-| Expected       | Access denied / redirected to login; no changes applied.             |
-| Severity       | High                                                                  |
-
----
-
-### UI-09 — Delete booking via UI (happy path)
-
-| Field           | Description                                                             |
-|----------------|-------------------------------------------------------------------------|
-| ID             | UI-09                                                                    |
-| Title          | Delete an existing booking from UI                                      |
-| Precondition   | At least one booking listed.                                            |
-| Steps          | 1. Click “Delete” for a booking. <br> 2. Confirm deletion (if modal).   |
-| Expected       | Booking removed from UI list. (Optional: API GET by ID returns `404`.)  |
-| Severity       | High                                                                    |
-
----
-
-### UI-10 — Cancel delete operation
-
-| Field           | Description                                                         |
-|----------------|---------------------------------------------------------------------|
-| ID             | UI-10                                                                |
-| Title          | User can cancel a delete operation                                   |
-| Precondition   | Booking present.                                                     |
-| Steps          | 1. Click “Delete” for a booking. <br> 2. Click “Cancel” on confirm.  |
-| Expected       | Booking remains in list; no delete API call executed.               |
-| Severity       | Medium                                                               |
-
----
-
-### UI-11 — Admin login (if admin area exists)
+### UI-06 — Admin login
 
 | Field           | Description                                                   |
 |----------------|---------------------------------------------------------------|
-| ID             | UI-11                                                         |
+| ID             | UI-06                                                         |
 | Title          | Log in to admin area with valid credentials                   |
 | Precondition   | Admin login page reachable.                                   |
 | Steps          | 1. Open admin login. <br> 2. Enter valid credentials. <br> 3. Submit. |
@@ -416,24 +537,24 @@ Base:
 
 ---
 
-### UI-12 — Admin login — invalid credentials
+### UI-07 — Admin login — invalid credentials
 
 | Field           | Description                                                 |
 |----------------|-------------------------------------------------------------|
-| ID             | UI-12                                                       |
+| ID             | UI-07                                                       |
 | Title          | Show proper error for invalid admin credentials             |
 | Precondition   | Admin login page open.                                      |
 | Steps          | 1. Enter invalid username/password. <br> 2. Submit.        |
-| Expected       | Error message; user remains on login page; no admin access. |
+| Expected       | Error message: Invalid credentials; user remains on login page; no admin access. |
 | Severity       | High                                                        |
 
 ---
 
-### UI-13 — Logout and session handling
+### UI-08 — Logout and session handling
 
 | Field           | Description                                                     |
 |----------------|-----------------------------------------------------------------|
-| ID             | UI-13                                                            |
+| ID             | UI-08                                                            |
 | Title          | Logout should invalidate session                                |
 | Precondition   | User logged in to admin area.                                   |
 | Steps          | 1. Click “Logout”. <br> 2. Try to open a protected admin URL.   |
@@ -442,11 +563,11 @@ Base:
 
 ---
 
-### UI-14 — Input validation and escaping in UI
+### UI-09 — Input validation and escaping in UI
 
 | Field           | Description                                                                                               |
 |----------------|-----------------------------------------------------------------------------------------------------------|
-| ID             | UI-14                                                                                                     |
+| ID             | UI-09                                                                                                  |
 | Title          | UI handles special characters / scripts safely in user input                                             |
 | Precondition   | Homepage or relevant input forms available.                                                              |
 | Steps          | 1. Enter `<script>alert(1)</script>` and other special chars into text fields. <br> 2. Submit booking/form. |
@@ -455,76 +576,11 @@ Base:
 
 ---
 
-### UI-15 — Responsive layout — mobile viewport
-
-| Field           | Description                                                       |
-|----------------|-------------------------------------------------------------------|
-| ID             | UI-15                                                              |
-| Title          | Application is usable in a mobile-like viewport                   |
-| Precondition   | Browser/devtools with mobile viewport emulation.                  |
-| Steps          | 1. Set viewport ~375x812. <br> 2. Reload homepage and scroll/inspect. |
-| Expected       | Main content visible; forms usable without horizontal scrolling.  |
-| Severity       | Medium                                                            |
-
----
-
-### UI-16 — Basic accessibility (labels / keyboard)
-
-| Field           | Description                                                                     |
-|----------------|---------------------------------------------------------------------------------|
-| ID             | UI-16                                                                          |
-| Title          | Basic accessibility support for forms                                          |
-| Precondition   | Homepage or form loaded.                                                       |
-| Steps          | 1. Check if each input has an associated label. <br> 2. Navigate using Tab key. |
-| Expected       | Labels correctly linked; focus order logical; visible focus indicators.        |
-| Severity       | Medium                                                                         |
-
----
-
-### UI-17 — UI behavior when server returns error
-
-| Field           | Description                                                                 |
-|----------------|-----------------------------------------------------------------------------|
-| ID             | UI-17                                                                      |
-| Title          | UI displays friendly error when API fails (e.g., 500)                      |
-| Precondition   | Ability to simulate API 5xx (via environment/mocks, if possible).          |
-| Steps          | 1. Trigger an API error (create booking while API returns 500).            |
-| Expected       | User sees friendly message (not raw JSON/stack trace); can retry or cancel.|
-| Severity       | High                                                                        |
-
----
-
-### UI-18 — Concurrent edits in Admin (sync behavior)
-
-| Field           | Description                                                                                                 |
-|----------------|-------------------------------------------------------------------------------------------------------------|
-| ID             | UI-18                                                                                                      |
-| Title          | Handle concurrent edits of the same booking from multiple admin sessions                                   |
-| Precondition   | Booking exists; two admin sessions/windows open on same record.                                            |
-| Steps          | 1. In window A, edit and save booking. <br> 2. In window B, with stale data, edit and save.                |
-| Expected       | Consistent final state; if conflict detection exists, UI should warn user about outdated data.             |
-| Severity       | High                                                                                                       |
-
----
-
-### UI-19 — Performance with many bookings
-
-| Field           | Description                                                                 |
-|----------------|-----------------------------------------------------------------------------|
-| ID             | UI-19                                                                      |
-| Title          | UI performance when many bookings are present                              |
-| Precondition   | Database populated with many bookings (e.g., via API).                     |
-| Steps          | 1. Open bookings list page/section.                                        |
-| Expected       | Page loads in acceptable time (e.g., < 3s visually); UI remains responsive.|
-| Severity       | Medium                                                                      |
-
----
-
-### UI-20 — Unauthorized actions from UI
+### UI-10 — Unauthorized actions from UI
 
 | Field           | Description                                                                  |
 |----------------|------------------------------------------------------------------------------|
-| ID             | UI-20                                                                        |
+| ID             | UI-10                                                                        |
 | Title          | Prevent destructive actions from unauthenticated user                        |
 | Precondition   | Not logged in.                                                               |
 | Steps          | 1. Try to access admin/edit/delete URLs directly from address bar or UI.    |
@@ -533,13 +589,48 @@ Base:
 
 ---
 
-## 3. Integration Test Cases (API ↔ UI)
-
-### INT-01 — Create booking via API and verify in UI
+### UI-11 — Create booking via API and verify in UI
 
 | Field           | Description                                                   |
 |----------------|---------------------------------------------------------------|
-| ID             | INT-01                                                        |
+| ID             | INT-21                                                        |
 | Title          | Booking created via API is visible in UI                      |
 | Precondition   | API and UI online.                                            |
 | Steps          | 1. Create booking with `POST /booking`. <br> 
+
+---
+
+### UI-12 — Admin creates room via UI and it appears in UI and API
+
+| Field           | Description                                                   |
+|----------------|---------------------------------------------------------------|
+| ID             | INT-12                                                      |
+| Title          | Booking created via UI is visible in UI and API Get                      |
+| Precondition   | API and UI online.                                            |
+| Steps          | 1. Create booking with url https://automationintesting.online/admin/rooms. <br> 
+
+---
+
+### UI-13 — Admin creates room via POST API and it appears in UI and API
+
+| Field           | Description                                                   |
+|----------------|---------------------------------------------------------------|
+| ID             | INT-13                                                      |
+| Title          | Booking created via API is visible in UI and API Get                      |
+| Precondition   | API and UI online.                                            |
+| Steps          | 1. Create booking with `POST /booking`. <br> 
+
+---
+
+### UI-14 — Performance with many bookings
+
+| Field           | Description                                                                 |
+|----------------|-----------------------------------------------------------------------------|
+| ID             | UI-14                                                                      |
+| Title          | UI performance when many bookings are present                              |
+| Precondition   | Database populated with many bookings (e.g., via API).                     |
+| Steps          | 1. Open bookings list page/section.                                        |
+| Expected       | Page loads in acceptable time (e.g., < 3s visually); UI remains responsive.|
+| Severity       | Medium                                                                      |
+
+---

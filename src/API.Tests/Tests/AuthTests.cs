@@ -13,12 +13,33 @@ public class AuthTests : TestBase
     [Fact(DisplayName = "API-08 - Authentication success returns token")]
     public async Task Auth_WithValidCredentials_ReturnsToken()
     {
-        // Act
-        var token = await AuthClient.GetTokenAsync("admin", "password123");
+        string? token = null;
 
-        // Log + assert
-        Output.WriteLine($"Token: {token}");
-        token.Should().NotBeNullOrWhiteSpace("token must be returned for valid credentials");
+        try
+        {
+            // Act
+            token = await AuthClient.GetTokenAsync("admin", "password123");
+
+            // Log + assert
+            Output.WriteLine($"Token: {token}");
+            token.Should().NotBeNullOrWhiteSpace("token must be returned for valid credentials");
+        }
+        finally
+        {
+            // Teardown: destroy the token if it was successfully obtained
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                try
+                {
+                    await AuthClient.DestroyTokenAsync(token!);
+                    Output.WriteLine("Token destroyed successfully after auth test.");
+                }
+                catch (Exception ex)
+                {
+                    Output.WriteLine($"Failed to destroy token after auth test: {ex.Message}");
+                }
+            }
+        }
     }
 
     [Fact(DisplayName = "API-09 - Authentication with invalid credentials does not return token")]
