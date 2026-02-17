@@ -34,18 +34,33 @@ public class HomePage
         try
         {
             GoTo();
+            // Wait for document ready
+            var readyWait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
+            readyWait.Until(d =>
+            {
+                var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
+                return state != null && state.ToString().Equals("complete", StringComparison.OrdinalIgnoreCase);
+            });
             var el = _wait.Until(d =>
             {
                 try
                 {
                     var e = d.FindElement(By.Id(HeaderSelector));
-                    return (e.Displayed) ? e : null;
+                    // ensure in viewport (helps headless)
+                    try
+                    {
+                        ((IJavaScriptExecutor)d).ExecuteScript("arguments[0].scrollIntoView(true);", e);
+                    }
+                    catch { /* ignore scroll errors */ }
+
+                    return e.Displayed ? e : null;
                 }
                 catch
                 {
                     return null;
                 }
             });
+
             return el != null && el.Displayed;
         }
         catch (Exception ex)
