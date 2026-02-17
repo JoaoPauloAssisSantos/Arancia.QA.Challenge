@@ -28,15 +28,18 @@ Environment recommendations:
 ---
 
 ## 📁 Repo Layout
-├── workflows/        # CI (GitHub Actions)
-├── docs/
-│   ├── TestStrategy.md
-│   ├── ManualTests.md
-│   └── BugReports.md
-└── src/
-    ├── API.Tests/
-    └── UI.Tests/
+```text
+.github/workflows/        # CI (GitHub Actions)
+docs/
+  ├─ TestStrategy.md
+  ├─ ManualTests.md
+  └─ BugReports.md
+src/
+  ├─ API.Tests/           # RestSharp + xUnit API tests
+  ├─ UI.Tests/            # Selenium + POM UI tests
+  └─ Framework/           # shared clients, POM, helpers
 README.md
+```
 
 ---
 
